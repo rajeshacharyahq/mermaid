@@ -151,7 +151,7 @@ function bindEvents() {
       closeMobileToolbar();
       closeMobileViewControls();
     }
-    closeNodePopup();
+    updateMobileEditorBackdrop();
     updateMainSeparatorOrientation();
     if (document.fullscreenElement === elements.previewPanel) fitDiagramToWindow();
   });

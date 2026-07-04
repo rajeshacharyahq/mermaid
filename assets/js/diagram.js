@@ -948,8 +948,11 @@ function openNodePopup(nodeId, nodeRect) {
   if (left < 12) left = 12;
   if (top + popupRect.height > window.innerHeight - 12) top = window.innerHeight - popupRect.height - 12;
   positionNodePopup(left, Math.max(12, top));
-  elements.nodeLabel.focus();
-  elements.nodeLabel.select();
+  const touchLayout = isCompactMobileLayout() || window.matchMedia("(pointer: coarse)").matches;
+  if (!touchLayout) {
+    elements.nodeLabel.focus();
+    elements.nodeLabel.select();
+  }
 }
 
 function positionNodePopup(left, top) {
