@@ -143,6 +143,8 @@ const elements = {
   textColor: document.getElementById("textColor"),
   borderColor: document.getElementById("borderColor"),
   edgeColor: document.getElementById("edgeColor"),
+  edgeThickness: document.getElementById("edgeThickness"),
+  edgeThicknessValue: document.getElementById("edgeThicknessValue"),
   toast: document.getElementById("toast"),
   quickAdd: document.getElementById("quickAddButton"),
   previewPanel: document.querySelector(".preview-panel"),

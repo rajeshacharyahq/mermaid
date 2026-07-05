@@ -204,6 +204,7 @@ function bindEvents() {
   createColorPalette("fillPalette", elements.fillColor);
   createColorPalette("borderPalette", elements.borderColor);
   createColorPalette("edgePalette", elements.edgeColor);
+  elements.edgeThickness.addEventListener("input", updateEdgeThicknessDisplay);
   createColorPalette("subgraphTextPalette", document.getElementById("subgraphTextColor"));
   createColorPalette("subgraphFillPalette", document.getElementById("subgraphFillColor"));
   createColorPalette("subgraphBorderPalette", document.getElementById("subgraphBorderColor"));

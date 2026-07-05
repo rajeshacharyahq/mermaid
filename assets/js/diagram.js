@@ -512,6 +512,8 @@ function openEdgePopup(edge, path) {
   document.getElementById("edgeStartStyle").value = getEdgeStartStyle(edge.operator);
   document.getElementById("edgeEndStyle").value = getEdgeEndStyle(edge.operator);
   const edgeColor = getEdgeColor(edge.index);
+  elements.edgeThickness.value = String(getEdgeThickness(edge.index) || 2);
+  updateEdgeThicknessDisplay();
   setColorInputState(elements.edgeColor, edgeColor || "#333333", Boolean(edgeColor));
   updateSelectedSwatches();
   const popup = document.getElementById("edgePopup");
@@ -539,6 +541,19 @@ function getEdgeColor(index) {
   const pattern = new RegExp(`^\\s*linkStyle\\s+${index}\\s+[^\\n]*stroke:\\s*(#[0-9a-f]{6})`, "mi");
   const match = elements.editor.value.match(pattern);
   return match ? match[1] : null;
+}
+
+function getEdgeThickness(index) {
+  const pattern = new RegExp(`^\\s*linkStyle\\s+${index}\\s+[^\\n]*stroke-width:\\s*([0-9.]+)px`, "mi");
+  const match = elements.editor.value.match(pattern);
+  if (!match) return null;
+  return Math.min(6, Math.max(1, Math.round(Number(match[1]))));
+}
+
+function updateEdgeThicknessDisplay() {
+  const thickness = Number(elements.edgeThickness.value) || 2;
+  elements.edgeThicknessValue.textContent = `${thickness} px`;
+  elements.edgeThickness.style.setProperty("--edge-thickness-progress", `${((thickness - 1) / 5) * 100}%`);
 }
 
 function getEdgeLineStyle(operator) {
@@ -580,11 +595,15 @@ function saveEdgeChanges() {
   const edgeLine = lines[edge.lineIndex];
   lines[edge.lineIndex] = `${edgeLine.slice(0, edge.operatorStart)}${replacement}${edgeLine.slice(edge.operatorEnd)}`;
   const useEdgeColor = elements.edgeColor.dataset.userSelected === "true" && elements.edgeColor.dataset.noColor !== "true";
-  const styleLine = `linkStyle ${edge.index} stroke:${elements.edgeColor.value},stroke-width:2px`;
+  const edgeThickness = Number(elements.edgeThickness.value) || 2;
+  const styleDeclarations = [];
+  if (useEdgeColor) styleDeclarations.push(`stroke:${elements.edgeColor.value}`);
+  if (useEdgeColor || edgeThickness !== 2) styleDeclarations.push(`stroke-width:${edgeThickness}px`);
+  const styleLine = `linkStyle ${edge.index} ${styleDeclarations.join(",")}`;
   const stylePattern = new RegExp(`^\\s*linkStyle\\s+${edge.index}\\s+.*$`, "i");
   const styleIndex = lines.findIndex(line => stylePattern.test(line));
-  if (useEdgeColor && styleIndex >= 0) lines[styleIndex] = styleLine;
-  else if (useEdgeColor) lines.push(styleLine);
+  if (styleDeclarations.length && styleIndex >= 0) lines[styleIndex] = styleLine;
+  else if (styleDeclarations.length) lines.push(styleLine);
   else if (styleIndex >= 0) lines.splice(styleIndex, 1);
   closeEdgePopup();
   setEditorCode(lines.join("\n"));
@@ -600,7 +619,7 @@ function deleteSelectedEdge() {
   }
   openConfirmationModal({
     title: "Delete this arrow?",
-    message: `Delete the arrow from ${edge.source} to ${edge.target}? This action cannot be undone.`,
+    message: `Delete the arrow from ${edge.source} to ${edge.target}?`,
     confirmLabel: "Delete arrow",
     danger: true,
     returnFocus: document.getElementById("deleteEdgeButton"),
@@ -1283,7 +1302,7 @@ function deleteSelectedNode() {
   const nodeId = selectedNodeId;
   openConfirmationModal({
     title: `Delete node ${nodeId}?`,
-    message: "The node and every arrow connected to it will be deleted. This action cannot be undone.",
+    message: "Delete this node and every arrow connected to it?",
     confirmLabel: "Delete node",
     danger: true,
     returnFocus: document.getElementById("deleteNodeButton"),
