@@ -4,6 +4,61 @@
 // Defaults, templates, and configuration
 // -----------------------------------------------------------------------------
 
+const DEFAULT_LAYOUT_ENGINE = "elk";
+const DIAGRAM_LAYOUT_ENGINES = new Set(["elk", "dagre"]);
+
+function getEmbeddedDiagramLayout(code) {
+  const frontmatter = String(code || "").match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  const layout = frontmatter?.[1].match(/^[ \t]*layout[ \t]*:[ \t]*(elk|dagre)[ \t]*$/im)?.[1].toLowerCase();
+  return DIAGRAM_LAYOUT_ENGINES.has(layout) ? layout : null;
+}
+
+function stripEmbeddedDiagramLayout(code) {
+  const source = String(code ?? "").replace(/^\uFEFF/, "");
+  const frontmatter = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!frontmatter) return source;
+
+  const lines = frontmatter[1].split(/\r?\n/);
+  const layoutIndex = lines.findIndex(line => /^[ \t]*layout[ \t]*:/i.test(line));
+  if (layoutIndex < 0) return source;
+  lines.splice(layoutIndex, 1);
+
+  const configIndex = lines.findIndex(line => /^config[ \t]*:[ \t]*$/i.test(line));
+  if (configIndex >= 0) {
+    const configIndent = lines[configIndex].match(/^[ \t]*/)?.[0].length || 0;
+    const hasConfigValue = lines.slice(configIndex + 1).some(line => {
+      if (!line.trim()) return false;
+      const indentation = line.match(/^[ \t]*/)?.[0].length || 0;
+      return indentation > configIndent;
+    });
+    if (!hasConfigValue) lines.splice(configIndex, 1);
+  }
+
+  const body = source.slice(frontmatter[0].length).replace(/^\r?\n/, "");
+  const remainingFrontmatter = lines.filter(line => line.trim()).join("\n");
+  return remainingFrontmatter ? `---\n${remainingFrontmatter}\n---${body ? `\n${body}` : ""}` : body;
+}
+
+function setEmbeddedDiagramLayout(code, layout) {
+  const source = String(code ?? "").replace(/^\uFEFF/, "");
+  if (!DIAGRAM_LAYOUT_ENGINES.has(layout)) return source;
+  const frontmatter = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!frontmatter) return `---\nconfig:\n  layout: ${layout}\n---${source ? `\n${source}` : ""}`;
+
+  const lines = frontmatter[1].split(/\r?\n/);
+  const layoutIndex = lines.findIndex(line => /^[ \t]*layout[ \t]*:/i.test(line));
+  if (layoutIndex >= 0) {
+    const indentation = lines[layoutIndex].match(/^[ \t]*/)?.[0] || "  ";
+    lines[layoutIndex] = `${indentation}layout: ${layout}`;
+  } else {
+    const configIndex = lines.findIndex(line => /^config[ \t]*:[ \t]*$/i.test(line));
+    if (configIndex >= 0) lines.splice(configIndex + 1, 0, `  layout: ${layout}`);
+    else lines.push("config:", `  layout: ${layout}`);
+  }
+  const body = source.slice(frontmatter[0].length).replace(/^\r?\n/, "");
+  return `---\n${lines.join("\n")}\n---${body ? `\n${body}` : ""}`;
+}
+
 const DEFAULT_CODE = `flowchart TD
     welcome(["Welcome to Mermaid Flow Editor"])
     choose{"How would you like to begin?"}
@@ -150,6 +205,12 @@ const elements = {
   previewPanel: document.querySelector(".preview-panel"),
   fullscreenButton: document.getElementById("fullscreenButton"),
   previewThemeButton: document.getElementById("previewThemeButton"),
+  diagramThemeButton: document.getElementById("diagramThemeButton"),
+  diagramThemeMenu: document.getElementById("diagramThemeMenu"),
+  directionButton: document.getElementById("directionButton"),
+  directionMenu: document.getElementById("directionMenu"),
+  layoutEngineButton: document.getElementById("layoutEngineButton"),
+  layoutEngineMenu: document.getElementById("layoutEngineMenu"),
   undoButton: document.getElementById("undoButton"),
   redoButton: document.getElementById("redoButton"),
   zoomLevel: document.getElementById("zoomLevel")
@@ -174,6 +235,9 @@ let panY = 0;
 let panStart = null;
 let pendingFitFrame = 0;
 let openNodeAfterRender = null;
+let openNodeEditorStateAfterRender = null;
+let openEdgeEditorStateAfterRender = null;
+let edgeVisualUpdateTimer = null;
 let selectedEdge = null;
 let selectedEdgePath = null;
 let selectedExportFormat = "svg";
@@ -187,6 +251,8 @@ let suppressNodeClick = false;
 let activeSubgraphDrag = null;
 let suppressSubgraphClick = false;
 let previewTheme = "light";
+let activeLayoutEngine = DEFAULT_LAYOUT_ENGINE;
+let activeDiagramThemeId = null;
 let pendingConfirmation = null;
 let confirmationReturnFocus = null;
 let activeLibraryShapeDrag = null;
@@ -201,10 +267,77 @@ const subgraphRangeCache = new Map();
 let nodePopupDrag = null;
 const modalFocusOrigins = new WeakMap();
 
-const PALETTE_COLORS = [
-  "#000000", "#595959", "#808080", "#b3b3b3", "#d9d9d9", "#ffffff", "#ff3838", "#ff5757", "#ff66c4",
-  "#cb6ce6", "#8c52ff", "#5e17eb", "#0097b2", "#0cc0df", "#5ce1e6", "#38b6ff", "#5271ff", "#0b53b6",
-  "#00bf63", "#7ed957", "#b4ff72", "#ffde59", "#ffbd59", "#ff914d"
+const STYLE_COLOR_PALETTE = [
+  { name: "Blue", fill: "#E3F2FD", border: "#1976D2", text: "#0D47A1", edge: "#1976D2" },
+  { name: "Cyan", fill: "#E0F7FA", border: "#0097A7", text: "#006064", edge: "#0097A7" },
+  { name: "Teal", fill: "#E0F2F1", border: "#00796B", text: "#004D40", edge: "#00796B" },
+  { name: "Green", fill: "#E8F5E9", border: "#388E3C", text: "#1B5E20", edge: "#388E3C" },
+  { name: "Light Green", fill: "#F1F8E9", border: "#689F38", text: "#33691E", edge: "#689F38" },
+  { name: "Amber", fill: "#FFF8E1", border: "#FFA000", text: "#FF6F00", edge: "#FFA000" },
+  { name: "Orange", fill: "#FFF3E0", border: "#F57C00", text: "#E65100", edge: "#F57C00" },
+  { name: "Red", fill: "#FFEBEE", border: "#D32F2F", text: "#B71C1C", edge: "#D32F2F" },
+  { name: "Pink", fill: "#FCE4EC", border: "#C2185B", text: "#880E4F", edge: "#C2185B" },
+  { name: "Purple", fill: "#F3E5F5", border: "#7B1FA2", text: "#4A148C", edge: "#7B1FA2" },
+  { name: "Indigo", fill: "#E8EAF6", border: "#303F9F", text: "#1A237E", edge: "#303F9F" },
+  { name: "Grey", fill: "#F5F5F5", border: "#616161", text: "#212121", edge: "#616161" },
+  { name: "Blue Grey", fill: "#ECEFF1", border: "#455A64", text: "#263238", edge: "#455A64" }
+];
+
+const DIAGRAM_THEMES = [
+  {
+    id: "blue-cyan", name: "Blue & Cyan",
+    nodes: [
+      { fill: "#E3F2FD", border: "#1976D2", text: "#0D47A1" },
+      { fill: "#E0F7FA", border: "#0097A7", text: "#006064" },
+      { fill: "#E8EAF6", border: "#303F9F", text: "#1A237E" }
+    ],
+    edge: "#1976D2", subgraph: { fill: "#F5FBFF", border: "#90CAF9", text: "#0D47A1" }
+  },
+  {
+    id: "teal-green", name: "Teal & Green",
+    nodes: [
+      { fill: "#E0F2F1", border: "#00796B", text: "#004D40" },
+      { fill: "#E8F5E9", border: "#388E3C", text: "#1B5E20" },
+      { fill: "#F1F8E9", border: "#689F38", text: "#33691E" }
+    ],
+    edge: "#00796B", subgraph: { fill: "#F3FAF7", border: "#80CBC4", text: "#004D40" }
+  },
+  {
+    id: "indigo-purple", name: "Indigo & Purple",
+    nodes: [
+      { fill: "#E8EAF6", border: "#303F9F", text: "#1A237E" },
+      { fill: "#F3E5F5", border: "#7B1FA2", text: "#4A148C" },
+      { fill: "#FCE4EC", border: "#C2185B", text: "#880E4F" }
+    ],
+    edge: "#5E35B1", subgraph: { fill: "#F7F5FC", border: "#9FA8DA", text: "#311B92" }
+  },
+  {
+    id: "amber-orange", name: "Amber & Orange",
+    nodes: [
+      { fill: "#FFF8E1", border: "#FFA000", text: "#E65100" },
+      { fill: "#FFF3E0", border: "#F57C00", text: "#BF360C" },
+      { fill: "#FFEBEE", border: "#D32F2F", text: "#B71C1C" }
+    ],
+    edge: "#EF6C00", subgraph: { fill: "#FFFBF2", border: "#FFCC80", text: "#E65100" }
+  },
+  {
+    id: "red-pink", name: "Red & Pink",
+    nodes: [
+      { fill: "#FFEBEE", border: "#D32F2F", text: "#B71C1C" },
+      { fill: "#FCE4EC", border: "#C2185B", text: "#880E4F" },
+      { fill: "#FFF3E0", border: "#F57C00", text: "#BF360C" }
+    ],
+    edge: "#C2185B", subgraph: { fill: "#FFF6F8", border: "#F48FB1", text: "#880E4F" }
+  },
+  {
+    id: "neutral-grey", name: "Neutral Grey",
+    nodes: [
+      { fill: "#F5F5F5", border: "#616161", text: "#212121" },
+      { fill: "#ECEFF1", border: "#455A64", text: "#263238" },
+      { fill: "#E3F2FD", border: "#1976D2", text: "#0D47A1" }
+    ],
+    edge: "#455A64", subgraph: { fill: "#FAFAFA", border: "#B0BEC5", text: "#263238" }
+  }
 ];
 
 const FLOWCHART_SHAPES = [

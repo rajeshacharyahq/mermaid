@@ -5,9 +5,16 @@
 // -----------------------------------------------------------------------------
 
 function handleEditorInput() {
+  const embeddedLayout = getEmbeddedDiagramLayout(elements.editor.value);
+  if (embeddedLayout && embeddedLayout !== activeLayoutEngine) {
+    activeLayoutEngine = embeddedLayout;
+    initializeMermaid();
+  }
   if (pendingEdgeSource) cancelEdgeCreation(false);
+  setActiveDiagramTheme(null);
   updateLineCount();
   updateDirectionButtons();
+  updateLayoutEngineButton();
   closeNodePopup();
   closeEdgePopup();
   closeSubgraphPopup();
@@ -40,7 +47,9 @@ async function renderDiagram() {
   }
   if (!code) {
     elements.preview.innerHTML = "";
-    showError("Enter Mermaid code to render a diagram.");
+    hideError();
+    setStatus("Ready", "");
+    elements.status.removeAttribute("title");
     return;
   }
 
@@ -63,7 +72,7 @@ async function renderDiagram() {
   } catch (error) {
     if (requestId !== renderSequence) return;
     removeMermaidErrorArtifacts();
-    showError(formatError(error));
+    showError(formatError(error, code));
     setStatus("Syntax error", "error");
     elements.status.removeAttribute("title");
   }
@@ -73,9 +82,48 @@ function removeMermaidErrorArtifacts() {
   document.querySelectorAll("body > div[id^='dmermaid-render-'], body > svg[id^='mermaid-render-']").forEach(node => node.remove());
 }
 
-function formatError(error) {
+function formatError(error, code = "") {
   const message = error && (error.str || error.message) ? (error.str || error.message) : String(error);
-  return `Unable to render this diagram.\n\n${message}`;
+  if (!code) return message;
+
+  const lines = code.split(/\r?\n/);
+  const reportedLine = Number(error?.hash?.loc?.first_line || message.match(/(?:parse error on|line)\s+(\d+)/i)?.[1]);
+  if (!Number.isFinite(reportedLine) || !lines.length) return `Unable to render this diagram.\n\n${message}`;
+
+  let lineIndex = Math.min(Math.max(reportedLine - 1, 0), lines.length - 1);
+  if (reportedLine > lines.length || !lines[lineIndex].trim()) {
+    const lastCodeLine = lines.findLastIndex(line => line.trim());
+    if (lastCodeLine >= 0) lineIndex = lastCodeLine;
+  }
+
+  const lineNumber = lineIndex + 1;
+  const sourceLine = lines[lineIndex].replace(/\t/g, "    ");
+  const sourcePrefix = `${lineNumber} | `;
+  const parserColumn = Number(error?.hash?.loc?.first_column);
+  const firstTextColumn = sourceLine.search(/\S/);
+  const column = reportedLine <= lines.length && Number.isFinite(parserColumn) && parserColumn > 0
+    ? Math.min(parserColumn, sourceLine.length)
+    : Math.max(0, firstTextColumn);
+  const pointer = `${" ".repeat(sourcePrefix.length + column)}^`;
+  const hint = getMermaidSyntaxHint(error, lines, lineIndex);
+  return `Unable to render this diagram.\n\nSyntax error near line ${lineNumber}:\n${sourcePrefix}${sourceLine}\n${pointer}\n\n${hint}`;
+}
+
+function getMermaidSyntaxHint(error, lines, lineIndex) {
+  const currentText = lines[lineIndex].trim();
+  let openSubgraphs = 0;
+  lines.forEach(line => {
+    if (/^\s*subgraph\b/i.test(line)) openSubgraphs += 1;
+    else if (/^\s*end\s*$/i.test(line)) openSubgraphs = Math.max(0, openSubgraphs - 1);
+  });
+
+  if (openSubgraphs > 0 && /^e(?:n)?$/i.test(currentText)) {
+    return `Complete "${currentText}" as "end" to close the subgraph.`;
+  }
+  if (openSubgraphs > 0 && error?.hash?.expected?.some(token => String(token).toLowerCase().includes("end"))) {
+    return `This subgraph is not closed. Add "end" after its final node or arrow.`;
+  }
+  return "Check the Mermaid syntax on this line.";
 }
 
 function showError(message) {
@@ -125,10 +173,14 @@ function restoreLocalSession() {
       const id = typeof diagram.id === "string" && diagram.id && !usedIds.has(diagram.id) ? diagram.id : createDiagramId();
       usedIds.add(id);
       const now = new Date().toISOString();
+      const embeddedLayout = getEmbeddedDiagramLayout(diagram.code);
+      const keepLayoutInCode = diagram.layoutInCode === true && !!embeddedLayout;
       return [{
         id,
         name: typeof diagram.name === "string" && diagram.name.trim() ? diagram.name.trim().slice(0, 80) : `Untitled Diagram ${index + 1}`,
-        code: diagram.code,
+        code: keepLayoutInCode ? diagram.code : stripEmbeddedDiagramLayout(diagram.code),
+        layout: DIAGRAM_LAYOUT_ENGINES.has(diagram.layout) ? diagram.layout : embeddedLayout || DEFAULT_LAYOUT_ENGINE,
+        layoutInCode: keepLayoutInCode,
         createdAt: isValidDateString(diagram.createdAt) ? diagram.createdAt : now,
         updatedAt: isValidDateString(diagram.updatedAt) ? diagram.updatedAt : now,
         versions: normalizeStoredVersions(diagram.versions)
@@ -136,7 +188,12 @@ function restoreLocalSession() {
     });
 
     if (!diagramLibrary.length) {
-      diagramLibrary = [createDiagramRecord(savedName, savedCode ?? DEFAULT_CODE)];
+      const legacyCode = savedCode ?? DEFAULT_CODE;
+      const legacyLayout = getEmbeddedDiagramLayout(legacyCode) || DEFAULT_LAYOUT_ENGINE;
+      const diagram = createDiagramRecord(savedName, stripEmbeddedDiagramLayout(legacyCode));
+      diagram.layout = legacyLayout;
+      diagram.layoutInCode = false;
+      diagramLibrary = [diagram];
     }
     const storedActiveId = localStorage.getItem(ACTIVE_DIAGRAM_KEY);
     activeDiagramId = diagramLibrary.some(diagram => diagram.id === storedActiveId) ? storedActiveId : diagramLibrary[0].id;
@@ -147,7 +204,10 @@ function restoreLocalSession() {
   }
 
   const activeDiagram = getActiveDiagram();
+  activeLayoutEngine = DIAGRAM_LAYOUT_ENGINES.has(activeDiagram.layout) ? activeDiagram.layout : DEFAULT_LAYOUT_ENGINE;
   elements.editor.value = activeDiagram.code;
+  activeDiagram.code = elements.editor.value;
+  activeDiagram.layout = activeLayoutEngine;
   elements.diagramName.value = activeDiagram.name;
   updateDiagramLibraryCount();
 }
@@ -163,7 +223,8 @@ function createDiagramId() {
 
 function createDiagramRecord(name, code) {
   const now = new Date().toISOString();
-  return { id: createDiagramId(), name: String(name || "Untitled Diagram").trim().slice(0, 80) || "Untitled Diagram", code: String(code ?? ""), createdAt: now, updatedAt: now, versions: [] };
+  const embeddedLayout = getEmbeddedDiagramLayout(code);
+  return { id: createDiagramId(), name: String(name || "Untitled Diagram").trim().slice(0, 80) || "Untitled Diagram", code: String(code ?? ""), layout: embeddedLayout || DEFAULT_LAYOUT_ENGINE, layoutInCode: !!embeddedLayout, createdAt: now, updatedAt: now, versions: [] };
 }
 
 function normalizeStoredVersions(versions) {
@@ -229,9 +290,11 @@ function autoSaveDiagram() {
     if (activeDiagram.name !== nextName || activeDiagram.code !== nextCode) recordDiagramSnapshot(activeDiagram, "Automatic snapshot");
     activeDiagram.name = nextName;
     activeDiagram.code = nextCode;
+    activeDiagram.layout = activeLayoutEngine;
+    activeDiagram.layoutInCode = !!getEmbeddedDiagramLayout(nextCode);
     activeDiagram.updatedAt = new Date().toISOString();
     persistDiagramLibrary();
-    localStorage.setItem(STORAGE_KEY, elements.editor.value);
+    localStorage.setItem(STORAGE_KEY, nextCode);
     localStorage.setItem(NAME_STORAGE_KEY, getDiagramName());
     updateDiagramLibraryCount();
     status.textContent = "Saved locally";

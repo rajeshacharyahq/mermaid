@@ -20,6 +20,7 @@ function initializeApp() {
   maybeShowMobileNotice();
   updateLineCount();
   updateDirectionButtons();
+  updateLayoutEngineButton();
   updateHistoryButtons();
   updateDocumentTitle();
 
@@ -27,6 +28,13 @@ function initializeApp() {
     showError("Mermaid could not be loaded. Place mermaid.min.js in the vendor folder.");
     return;
   }
+
+  const elkLayouts = window.mermaidElkLayouts && window.mermaidElkLayouts.default;
+  if (!Array.isArray(elkLayouts)) {
+    showError("ELK layout could not be loaded. Check vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js.");
+    return;
+  }
+  mermaid.registerLayoutLoaders(elkLayouts);
 
   initializeMermaid();
   updatePreviewThemeUI();
@@ -41,6 +49,7 @@ function initializeMermaid() {
     startOnLoad: false,
     securityLevel: "strict",
     theme: previewTheme === "dark" ? "dark" : "default",
+    layout: activeLayoutEngine,
     flowchart: { htmlLabels: false, useMaxWidth: true }
   });
 }
@@ -94,6 +103,7 @@ function bindEvents() {
   document.querySelectorAll(".close-info-modal").forEach(button => button.addEventListener("click", closeInfoModals));
   document.querySelectorAll("#helpModal, #aboutModal").forEach(modal => modal.addEventListener("click", event => { if (event.target === modal) closeInfoModals(); }));
   document.getElementById("closePopupButton").addEventListener("click", closeNodePopup);
+  document.getElementById("nodeGoToCodeButton").addEventListener("click", goToSelectedNodeCode);
   document.getElementById("editorBackdrop").addEventListener("click", () => {
     closeNodePopup();
     closeEdgePopup();
@@ -108,20 +118,38 @@ function bindEvents() {
   document.getElementById("createEdgeButton").addEventListener("click", beginEdgeCreation);
   document.getElementById("cancelEdgeCreationButton").addEventListener("click", () => cancelEdgeCreation());
   document.getElementById("closeEdgePopupButton").addEventListener("click", closeEdgePopup);
+  document.getElementById("edgeGoToCodeButton").addEventListener("click", goToSelectedEdgeCode);
   document.getElementById("saveEdgeButton").addEventListener("click", saveEdgeChanges);
   document.getElementById("deleteEdgeButton").addEventListener("click", deleteSelectedEdge);
   document.getElementById("closeSubgraphPopupButton").addEventListener("click", closeSubgraphPopup);
+  document.getElementById("subgraphGoToCodeButton").addEventListener("click", goToSelectedSubgraphCode);
   document.querySelectorAll(".apply-subgraph-button").forEach(button => button.addEventListener("click", saveSubgraphTitle));
   document.querySelectorAll("[data-subgraph-panel]").forEach(button => button.addEventListener("click", () => showSubgraphPanel(button.dataset.subgraphPanel)));
   document.getElementById("deleteSubgraphButton").addEventListener("click", deleteSelectedSubgraph);
   document.getElementById("createSubgraphEdgeButton").addEventListener("click", beginSubgraphEdge);
   document.getElementById("subgraphTitleInput").addEventListener("keydown", event => { if (event.key === "Enter") saveSubgraphTitle(); });
   document.querySelectorAll(".apply-node-button").forEach(button => button.addEventListener("click", saveNodeChanges));
+  document.getElementById("nodeLabelBoldButton").addEventListener("click", () => toggleNodeLabelFormatting("bold"));
+  document.getElementById("nodeLabelItalicButton").addEventListener("click", () => toggleNodeLabelFormatting("italic"));
+  [elements.nodeLabel, document.getElementById("edgeLabel")].forEach(textarea => {
+    textarea.addEventListener("input", () => autoResizeLabelTextarea(textarea));
+  });
+  elements.nodeLabel.addEventListener("keydown", event => {
+    if (!(event.ctrlKey || event.metaKey) || !["b", "i"].includes(event.key.toLowerCase())) return;
+    event.preventDefault();
+    toggleNodeLabelFormatting(event.key.toLowerCase() === "b" ? "bold" : "italic");
+  });
   document.getElementById("saveNodeImageButton").addEventListener("click", saveNodeImage);
   document.getElementById("clearNodeImageButton").addEventListener("click", clearNodeImage);
   elements.nodeImageUrl.addEventListener("keydown", event => { if (event.key === "Enter") saveNodeImage(); });
+  document.getElementById("saveNodeLinkButton").addEventListener("click", saveNodeLink);
+  document.getElementById("removeNodeLinkButton").addEventListener("click", removeNodeLink);
+  document.getElementById("nodeLinkUrl").addEventListener("keydown", event => { if (event.key === "Enter") saveNodeLink(); });
   document.querySelectorAll("[data-node-panel]").forEach(button => button.addEventListener("click", () => showNodePanel(button.dataset.nodePanel)));
-  document.querySelectorAll("[data-shape]").forEach(button => button.addEventListener("click", () => selectShape(button.dataset.shape)));
+  document.querySelectorAll("[data-shape]").forEach(button => button.addEventListener("click", () => {
+    selectShape(button.dataset.shape);
+    applyNodeVisualChangesLive();
+  }));
   elements.fileInput.addEventListener("change", importCode);
   elements.editor.addEventListener("input", handleEditorInput);
   elements.editor.addEventListener("scroll", syncEditorLineNumbers);
@@ -143,6 +171,9 @@ function bindEvents() {
   document.addEventListener("keydown", trapModalFocus);
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
+    closeDirectionMenu();
+    closeLayoutEngineMenu();
+    closeDiagramThemeMenu();
     closeMobileToolbar();
     closeMobileViewControls();
   });
@@ -153,6 +184,9 @@ function bindEvents() {
     }
     updateMobileEditorBackdrop();
     updateMainSeparatorOrientation();
+    if (!elements.directionMenu.hidden) positionDirectionMenu();
+    if (!elements.layoutEngineMenu.hidden) positionLayoutEngineMenu();
+    if (!elements.diagramThemeMenu.hidden) positionDiagramThemeMenu();
     if (document.fullscreenElement === elements.previewPanel) fitDiagramToWindow();
   });
   elements.preview.addEventListener("scroll", hideQuickAddButton);
@@ -182,10 +216,14 @@ function bindEvents() {
       elements.zoomLevel.blur();
     }
   });
-  document.getElementById("centerViewButton").addEventListener("click", centerView);
-  document.getElementById("topDownButton").addEventListener("click", () => setFlowDirection("TD"));
-  document.getElementById("leftRightButton").addEventListener("click", () => setFlowDirection("LR"));
+  elements.directionButton.addEventListener("click", toggleDirectionMenu);
+  document.querySelectorAll("[data-flow-direction][role='menuitemradio']").forEach(button => button.addEventListener("click", () => setFlowDirection(button.dataset.flowDirection)));
   document.getElementById("fitViewButton").addEventListener("click", fitDiagramToWindow);
+  elements.layoutEngineButton.addEventListener("click", toggleLayoutEngineMenu);
+  document.getElementById("closeLayoutEngineMenuButton").addEventListener("click", () => closeLayoutEngineMenu(true));
+  document.querySelectorAll("[data-layout-engine]").forEach(button => button.addEventListener("click", () => setDiagramLayout(button.dataset.layoutEngine)));
+  elements.diagramThemeButton.addEventListener("click", toggleDiagramThemeMenu);
+  document.getElementById("closeDiagramThemeMenuButton").addEventListener("click", () => closeDiagramThemeMenu(true));
   elements.previewThemeButton.addEventListener("click", togglePreviewTheme);
   elements.fullscreenButton.addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -199,15 +237,29 @@ function bindEvents() {
     }
     if (!event.target.closest(".app-header")) closeMobileToolbar();
     if (!event.target.closest("#previewViewControls, #mobileViewControlsButton")) closeMobileViewControls();
+    if (!event.target.closest("#directionMenu, #directionButton")) closeDirectionMenu();
+    if (!event.target.closest("#layoutEngineMenu, #layoutEngineButton")) closeLayoutEngineMenu();
+    if (!event.target.closest("#diagramThemeMenu, #diagramThemeButton")) closeDiagramThemeMenu();
   });
-  createColorPalette("textPalette", elements.textColor);
-  createColorPalette("fillPalette", elements.fillColor);
-  createColorPalette("borderPalette", elements.borderColor);
-  createColorPalette("edgePalette", elements.edgeColor);
-  elements.edgeThickness.addEventListener("input", updateEdgeThicknessDisplay);
-  createColorPalette("subgraphTextPalette", document.getElementById("subgraphTextColor"));
-  createColorPalette("subgraphFillPalette", document.getElementById("subgraphFillColor"));
-  createColorPalette("subgraphBorderPalette", document.getElementById("subgraphBorderColor"));
+  createDiagramThemeOptions();
+  createColorPalette("textPalette", elements.textColor, "text");
+  createColorPalette("fillPalette", elements.fillColor, "fill");
+  createColorPalette("borderPalette", elements.borderColor, "border");
+  createColorPalette("edgePalette", elements.edgeColor, "edge");
+  [elements.fillColor, elements.textColor, elements.borderColor].forEach(input => {
+    input.addEventListener("change", applyNodeVisualChangesLive);
+  });
+  elements.edgeColor.addEventListener("change", applyEdgeVisualChangesLive);
+  ["edgeStyle", "edgeStartStyle", "edgeEndStyle"].forEach(id => {
+    document.getElementById(id).addEventListener("change", applyEdgeVisualChangesLive);
+  });
+  elements.edgeThickness.addEventListener("input", () => {
+    updateEdgeThicknessDisplay();
+    scheduleEdgeVisualUpdate();
+  });
+  createColorPalette("subgraphTextPalette", document.getElementById("subgraphTextColor"), "text");
+  createColorPalette("subgraphFillPalette", document.getElementById("subgraphFillColor"), "fill");
+  createColorPalette("subgraphBorderPalette", document.getElementById("subgraphBorderColor"), "border");
   createShapeLibrary();
   createNodeShapePicker();
   const shapeSearch = document.getElementById("shapeSearch");

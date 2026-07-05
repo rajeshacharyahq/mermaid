@@ -66,7 +66,10 @@ function createNodeShapePicker() {
     button.setAttribute("aria-selected", "false");
     button.setAttribute("aria-label", `Use ${label} shape`);
     button.innerHTML = `<span class="shape-thumbnail" aria-hidden="true"><span class="library-glyph ${shape}"></span></span><span>${label}</span>`;
-    button.addEventListener("click", () => selectShape(shape));
+    button.addEventListener("click", () => {
+      selectShape(shape);
+      applyNodeVisualChangesLive();
+    });
     list.appendChild(button);
   });
 
@@ -337,8 +340,9 @@ function getNextSubgraphId() {
   return `sg${nextNumber}`;
 }
 
-function createColorPalette(containerId, colorInput) {
+function createColorPalette(containerId, colorInput, paletteRole) {
   const container = document.getElementById(containerId);
+  const palette = STYLE_COLOR_PALETTE.map(theme => ({ name: theme.name, color: theme[paletteRole], border: theme.border }));
   const noColorButton = document.createElement("button");
   noColorButton.type = "button";
   noColorButton.className = "swatch no-color";
@@ -349,21 +353,24 @@ function createColorPalette(containerId, colorInput) {
     colorInput.dataset.noColor = "true";
     colorInput.dataset.userSelected = "true";
     updateSelectedSwatches();
+    colorInput.dispatchEvent(new Event("change", { bubbles: true }));
   });
   container.appendChild(noColorButton);
-  PALETTE_COLORS.forEach(color => {
+  palette.forEach(({ name, color, border }) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "swatch";
+    button.className = `swatch swatch-${paletteRole}`;
     button.style.setProperty("--swatch", color);
+    if (paletteRole === "fill") button.style.setProperty("--swatch-border", border);
     button.dataset.color = color;
-    button.title = color;
-    button.setAttribute("aria-label", `Choose ${color}`);
+    button.title = `${name} (${color})`;
+    button.setAttribute("aria-label", `Choose ${name} ${paletteRole}`);
     button.addEventListener("click", () => {
       colorInput.value = color;
       colorInput.dataset.noColor = "false";
       colorInput.dataset.userSelected = "true";
       updateSelectedSwatches();
+      colorInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
     container.appendChild(button);
   });

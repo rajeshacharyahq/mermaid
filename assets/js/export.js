@@ -157,6 +157,9 @@ function restoreDiagramVersion(diagramId, versionId) {
 
   recordDiagramSnapshot(diagram, "Before restoring a previous version", true);
   diagram.code = version.code;
+  const restoredLayout = getEmbeddedDiagramLayout(version.code);
+  if (restoredLayout) diagram.layout = restoredLayout;
+  diagram.layoutInCode = !!restoredLayout;
   diagram.name = getAvailableRestoredName(diagram.id, version.name);
   diagram.updatedAt = new Date().toISOString();
   try {
@@ -275,6 +278,9 @@ function loadActiveDiagramIntoEditor() {
   clearTimeout(historyTimer);
   clearTimeout(renderTimer);
   elements.diagramName.value = diagram.name;
+  activeLayoutEngine = getEmbeddedDiagramLayout(diagram.code) || (DIAGRAM_LAYOUT_ENGINES.has(diagram.layout) ? diagram.layout : DEFAULT_LAYOUT_ENGINE);
+  diagram.layout = activeLayoutEngine;
+  diagram.layoutInCode = !!getEmbeddedDiagramLayout(diagram.code);
   elements.editor.value = diagram.code;
   history = [diagram.code];
   historyIndex = 0;
@@ -282,10 +288,12 @@ function loadActiveDiagramIntoEditor() {
   panY = 0;
   updateLineCount();
   updateDirectionButtons();
+  updateLayoutEngineButton();
   updateHistoryButtons();
   updateDocumentTitle();
   updateDiagramLibraryCount();
   hideError();
+  initializeMermaid();
   renderDiagram();
   const status = document.getElementById("autosaveStatus");
   status.textContent = "Saved locally";
@@ -459,11 +467,12 @@ function openExportModal(format) {
     svg: "Scalable vector output, ideal for websites and further editing.",
     png: "Lossless raster image, ideal for documents and transparent backgrounds.",
     jpg: "Compressed raster image with adjustable quality and a solid background.",
-    pdf: "Single-page PDF fitted to your selected paper size."
+    pdf: "Scalable vector PDF fitted to your selected paper size."
   };
   document.getElementById("exportFormatDescription").textContent = descriptions[format];
   const supportsTransparency = format === "svg" || format === "png";
-  document.getElementById("exportQualityField").hidden = !["jpg", "pdf"].includes(format);
+  document.getElementById("exportQualityField").hidden = format !== "jpg";
+  document.getElementById("exportScaleField").hidden = format === "pdf";
   document.getElementById("exportBackgroundField").hidden = false;
   document.getElementById("transparentBackground").disabled = !supportsTransparency;
   document.getElementById("transparentBackground").checked = false;
@@ -471,9 +480,7 @@ function openExportModal(format) {
   document.getElementById("pdfPageField").hidden = format !== "pdf";
   document.getElementById("pdfOrientationField").hidden = format !== "pdf";
   if (format === "pdf") selectRecommendedPdfOrientation();
-  document.getElementById("exportScaleLabel").textContent = format === "pdf"
-    ? "Diagram resolution"
-    : format === "svg" ? "Export scale" : "Output size";
+  document.getElementById("exportScaleLabel").textContent = format === "svg" ? "Export scale" : "Output size";
   updateExportBackgroundControls();
   updateExportSizeSummary();
   openModal(
@@ -518,7 +525,7 @@ function getExportPixelDimensions() {
   const viewBox = svg.viewBox && svg.viewBox.baseVal;
   const baseWidth = Math.max(1, (viewBox && viewBox.width) || svg.getBoundingClientRect().width);
   const baseHeight = Math.max(1, (viewBox && viewBox.height) || svg.getBoundingClientRect().height);
-  const scale = Math.max(1, Number(document.getElementById("exportScale").value) || 1);
+  const scale = selectedExportFormat === "pdf" ? 1 : Math.max(1, Number(document.getElementById("exportScale").value) || 1);
   const padding = Math.min(500, Math.max(0, Number(document.getElementById("exportPadding").value) || 0));
   return {
     width: Math.max(1, Math.round((baseWidth + padding * 2) * scale)),
@@ -554,7 +561,7 @@ async function exportWithOptions() {
   button.textContent = "Exporting…";
   try {
     const svg = elements.preview.querySelector("svg");
-    const scale = Number(document.getElementById("exportScale").value);
+    const scale = selectedExportFormat === "pdf" ? 1 : Number(document.getElementById("exportScale").value);
     const padding = Math.min(500, Math.max(0, Number(document.getElementById("exportPadding").value) || 0));
     const background = document.getElementById("exportBackground").value;
     const transparent = document.getElementById("transparentBackground").checked && !["jpg", "pdf"].includes(selectedExportFormat);
@@ -563,18 +570,16 @@ async function exportWithOptions() {
 
     if (selectedExportFormat === "svg") {
       downloadBlob(new Blob([prepared.source], { type: "image/svg+xml;charset=utf-8" }), `${getSafeFilename()}.svg`);
+    } else if (selectedExportFormat === "pdf") {
+      const pdf = await createPdfFromSvg(prepared.svg, prepared.width, prepared.height, background, prepared.links);
+      downloadBlob(pdf, `${getSafeFilename()}.pdf`);
     } else {
       const canvas = await svgSourceToCanvas(prepared.source, prepared.width, prepared.height, transparent ? null : background);
       if (selectedExportFormat === "png") {
         downloadBlob(await canvasToBlob(canvas, "image/png", 1), `${getSafeFilename()}.png`);
       } else {
         const jpegBlob = await canvasToBlob(canvas, "image/jpeg", quality);
-        if (selectedExportFormat === "jpg") {
-          downloadBlob(jpegBlob, `${getSafeFilename()}.jpg`);
-        } else {
-          const pdf = await createPdfFromJpeg(jpegBlob, canvas.width, canvas.height, background);
-          downloadBlob(pdf, `${getSafeFilename()}.pdf`);
-        }
+        downloadBlob(jpegBlob, `${getSafeFilename()}.jpg`);
       }
     }
     closeExportModal();
@@ -590,6 +595,7 @@ async function exportWithOptions() {
 function prepareSvgForExport(svg, scale, padding, background, transparent) {
   const clone = svg.cloneNode(true);
   clone.querySelectorAll(".edge-hit-area").forEach(node => node.remove());
+  clone.querySelectorAll(".node-link-action").forEach(node => node.remove());
   clone.querySelectorAll(".edge-hover, .edge-selected").forEach(node => node.classList.remove("edge-hover", "edge-selected"));
   clone.querySelectorAll("[tabindex]").forEach(node => node.removeAttribute("tabindex"));
   replaceForeignObjectLabels(clone, svg);
@@ -603,6 +609,8 @@ function prepareSvgForExport(svg, scale, padding, background, transparent) {
   const baseHeight = Math.max(1, viewBox.height || svg.getBoundingClientRect().height);
   const paddedWidth = baseWidth + padding * 2;
   const paddedHeight = baseHeight + padding * 2;
+  const exportViewBox = { x: viewBox.x - padding, y: viewBox.y - padding, width: paddedWidth, height: paddedHeight };
+  const links = collectExportNodeLinks(svg, exportViewBox);
   const width = Math.max(1, Math.round(paddedWidth * scale));
   const height = Math.max(1, Math.round(paddedHeight * scale));
   clone.setAttribute("width", width);
@@ -619,7 +627,55 @@ function prepareSvgForExport(svg, scale, padding, background, transparent) {
     rect.setAttribute("data-export-background", "true");
     clone.insertBefore(rect, clone.firstChild);
   }
-  return { source: new XMLSerializer().serializeToString(clone), width, height };
+  return { svg: clone, source: new XMLSerializer().serializeToString(clone), width, height, links };
+}
+
+function collectExportNodeLinks(svg, exportViewBox) {
+  const rootMatrix = svg.getCTM();
+  if (!rootMatrix) return [];
+  const seen = new Set();
+
+  return Array.from(svg.querySelectorAll(RENDERED_NODE_SELECTOR)).flatMap(node => {
+    const nodeId = getNodeId(node);
+    if (!nodeId || seen.has(nodeId)) return [];
+    seen.add(nodeId);
+    const link = findNodeLinkInCode(elements.editor.value, nodeId);
+    if (!link || validateNodeLinkUrl(link.url)) return [];
+
+    const bounds = getElementBoundsInSvg(node, rootMatrix);
+    if (!bounds) return [];
+    const left = Math.max(exportViewBox.x, bounds.x);
+    const top = Math.max(exportViewBox.y, bounds.y);
+    const right = Math.min(exportViewBox.x + exportViewBox.width, bounds.x + bounds.width);
+    const bottom = Math.min(exportViewBox.y + exportViewBox.height, bounds.y + bounds.height);
+    if (right <= left || bottom <= top) return [];
+
+    return [{
+      url: link.url,
+      x: (left - exportViewBox.x) / exportViewBox.width,
+      y: (top - exportViewBox.y) / exportViewBox.height,
+      width: (right - left) / exportViewBox.width,
+      height: (bottom - top) / exportViewBox.height
+    }];
+  });
+}
+
+function getElementBoundsInSvg(element, rootMatrix) {
+  const elementMatrix = element.getCTM();
+  if (!elementMatrix) return null;
+  const box = element.getBBox();
+  const matrix = rootMatrix.inverse().multiply(elementMatrix);
+  const points = [
+    new DOMPoint(box.x, box.y),
+    new DOMPoint(box.x + box.width, box.y),
+    new DOMPoint(box.x, box.y + box.height),
+    new DOMPoint(box.x + box.width, box.y + box.height)
+  ].map(point => point.matrixTransform(matrix));
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  return { x: left, y: top, width: Math.max(...xs) - left, height: Math.max(...ys) - top };
 }
 
 function replaceForeignObjectLabels(svgClone, sourceSvg) {
@@ -722,8 +778,9 @@ function canvasToBlob(canvas, type, quality) {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Image encoding failed.")), type, quality));
 }
 
-async function createPdfFromJpeg(jpegBlob, imageWidth, imageHeight, background) {
-  const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+async function createPdfFromSvg(svg, imageWidth, imageHeight, background, links = []) {
+  const PdfConstructor = window.jspdf && window.jspdf.jsPDF;
+  if (!PdfConstructor) throw new Error("The vector PDF renderer is unavailable.");
   const pageChoice = document.getElementById("pdfPageSize").value;
   const orientation = document.getElementById("pdfOrientation").value;
   const margin = 36;
@@ -736,32 +793,26 @@ async function createPdfFromJpeg(jpegBlob, imageWidth, imageHeight, background) 
   const drawHeight = imageHeight * scale;
   const drawX = (pageWidth - drawWidth) / 2;
   const drawY = (pageHeight - drawHeight) / 2;
-  const [red, green, blue] = hexToPdfRgb(background);
-  const content = `q\n${red} ${green} ${blue} rg\n0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)} re\nf\nQ\nq\n${drawWidth.toFixed(2)} 0 0 ${drawHeight.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm\n/Im0 Do\nQ\n`;
-  const encode = value => new TextEncoder().encode(value);
-  const objects = [
-    encode("<< /Type /Catalog /Pages 2 0 R >>"),
-    encode("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
-    encode(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`),
-    joinBytes([encode(`<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`), jpegBytes, encode("\nendstream")]),
-    encode(`<< /Length ${encode(content).length} >>\nstream\n${content}endstream`)
-  ];
-
-  const chunks = [encode("%PDF-1.4\n%----\n")];
-  const offsets = [0];
-  let byteLength = chunks[0].length;
-  objects.forEach((object, index) => {
-    offsets.push(byteLength);
-    const wrapped = joinBytes([encode(`${index + 1} 0 obj\n`), object, encode("\nendobj\n")]);
-    chunks.push(wrapped);
-    byteLength += wrapped.length;
+  const pdf = new PdfConstructor({
+    orientation: pageWidth > pageHeight ? "landscape" : "portrait",
+    unit: "pt",
+    format: [pageWidth, pageHeight],
+    compress: true,
+    precision: 12
   });
-  const xrefOffset = byteLength;
-  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  offsets.slice(1).forEach(offset => { xref += `${String(offset).padStart(10, "0")} 00000 n \n`; });
-  xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  chunks.push(encode(xref));
-  return new Blob(chunks, { type: "application/pdf" });
+  pdf.setFillColor(background);
+  pdf.rect(0, 0, pageWidth, pageHeight, "F");
+  await pdf.svg(svg, { x: drawX, y: drawY, width: drawWidth, height: drawHeight });
+  links.forEach(link => {
+    pdf.link(
+      drawX + link.x * drawWidth,
+      drawY + link.y * drawHeight,
+      link.width * drawWidth,
+      link.height * drawHeight,
+      { url: link.url }
+    );
+  });
+  return pdf.output("blob");
 }
 
 function getPdfPageDimensions(pageChoice, orientation, imageWidth, imageHeight, margin = 36) {
@@ -771,18 +822,6 @@ function getPdfPageDimensions(pageChoice, orientation, imageWidth, imageHeight, 
   let [width, height] = pageChoice === "letter" ? [612, 792] : [595.28, 841.89];
   if (orientation === "landscape") [width, height] = [height, width];
   return { width, height };
-}
-
-function hexToPdfRgb(hex) {
-  const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : "ffffff";
-  return [0, 2, 4].map(index => (Number.parseInt(normalized.slice(index, index + 2), 16) / 255).toFixed(4));
-}
-
-function joinBytes(parts) {
-  const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
-  let offset = 0;
-  parts.forEach(part => { output.set(part, offset); offset += part.length; });
-  return output;
 }
 
 function clearDiagram() {
@@ -806,6 +845,7 @@ function performClearDiagram() {
   closeNodePopup();
   updateLineCount();
   updateDirectionButtons();
+  updateLayoutEngineButton();
   scheduleAutoSave();
   setStatus("Cleared", "");
   elements.editor.focus();

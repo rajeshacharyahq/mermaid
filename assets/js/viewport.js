@@ -4,11 +4,17 @@
 // History and preview navigation
 // -----------------------------------------------------------------------------
 
-function setEditorCode(code) {
-  elements.editor.value = code;
+function setEditorCode(code, options = {}) {
+  const embeddedLayout = getEmbeddedDiagramLayout(code);
+  const layoutChanged = embeddedLayout && embeddedLayout !== activeLayoutEngine;
+  if (embeddedLayout) activeLayoutEngine = embeddedLayout;
+  elements.editor.value = String(code ?? "");
+  setActiveDiagramTheme(options.diagramThemeId || null);
   recordHistory();
   updateLineCount();
   updateDirectionButtons();
+  updateLayoutEngineButton();
+  if (layoutChanged && window.mermaid) initializeMermaid();
   scheduleAutoSave();
   renderDiagram();
 }
@@ -57,8 +63,10 @@ function redoCode() {
 
 function restoreHistoryEntry() {
   elements.editor.value = history[historyIndex];
+  setActiveDiagramTheme(null);
   updateLineCount();
   updateDirectionButtons();
+  updateLayoutEngineButton();
   updateHistoryButtons();
   renderDiagram();
 }
@@ -74,21 +82,38 @@ function changeZoom(amount) {
 }
 
 function setFlowDirection(direction) {
+  const directionDetails = getFlowDirectionDetails(direction);
+  if (!directionDetails) return;
+  closeDirectionMenu();
   const declaration = /^(\s*(?:flowchart|graph)\s+)(TD|TB|LR|RL|BT)\b/im;
   const code = declaration.test(elements.editor.value)
     ? elements.editor.value.replace(declaration, `$1${direction}`)
     : `flowchart ${direction}\n${elements.editor.value.trimStart()}`;
   setEditorCode(code);
-  showToast(direction === "TD" ? "Top-down layout applied." : "Left-to-right layout applied.");
+  if (isCompactMobileLayout()) closeMobileViewControls();
+  showToast(`${directionDetails.label} direction applied.`);
 }
 
 function updateDirectionButtons() {
   const match = elements.editor.value.match(/^\s*(?:flowchart|graph)\s+(TD|TB|LR|RL|BT)\b/im);
-  const direction = match ? match[1].toUpperCase() : "TD";
-  document.getElementById("topDownButton").classList.toggle("active", direction === "TD" || direction === "TB");
-  document.getElementById("leftRightButton").classList.toggle("active", direction === "LR");
-  document.getElementById("topDownButton").setAttribute("aria-pressed", String(direction === "TD" || direction === "TB"));
-  document.getElementById("leftRightButton").setAttribute("aria-pressed", String(direction === "LR"));
+  const direction = match && match[1].toUpperCase() === "TB" ? "TD" : (match ? match[1].toUpperCase() : "TD");
+  const directionDetails = getFlowDirectionDetails(direction);
+  if (!elements.directionButton || !directionDetails) return;
+  elements.directionButton.dataset.flowDirection = direction;
+  elements.directionButton.setAttribute("aria-label", `Choose flowchart direction. Current direction: ${directionDetails.label}`);
+  elements.directionButton.title = `Direction: ${directionDetails.label}`;
+  document.querySelectorAll("[data-flow-direction][role='menuitemradio']").forEach(button => {
+    button.setAttribute("aria-checked", String(button.dataset.flowDirection === direction));
+  });
+}
+
+function getFlowDirectionDetails(direction) {
+  return {
+    TD: { label: "Top to bottom" },
+    BT: { label: "Bottom to top" },
+    LR: { label: "Left to right" },
+    RL: { label: "Right to left" }
+  }[direction] || null;
 }
 
 function applyTypedZoom() {
@@ -279,6 +304,184 @@ function updatePreviewThemeUI() {
   elements.preview.setAttribute("data-theme", previewTheme);
 }
 
+function createDiagramThemeOptions() {
+  const container = document.getElementById("diagramThemeOptions");
+  container.replaceChildren();
+  DIAGRAM_THEMES.forEach(theme => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "diagram-theme-option";
+    button.dataset.diagramTheme = theme.id;
+    button.setAttribute("role", "menuitemradio");
+    button.setAttribute("aria-checked", "false");
+    button.setAttribute("aria-label", `Apply ${theme.name} diagram theme`);
+
+    const sample = document.createElement("span");
+    sample.className = "diagram-theme-sample";
+    sample.textContent = "Aa";
+    sample.setAttribute("aria-hidden", "true");
+    sample.style.setProperty("--theme-fill", theme.nodes[0].fill);
+    sample.style.setProperty("--theme-border", theme.nodes[0].border);
+    sample.style.setProperty("--theme-text", theme.nodes[0].text);
+    sample.style.setProperty("--theme-secondary", theme.nodes[1].fill);
+    sample.style.setProperty("--theme-accent", theme.nodes[2].fill);
+
+    const name = document.createElement("span");
+    name.className = "diagram-theme-option-name";
+    name.textContent = theme.name;
+    button.append(sample, name);
+    button.addEventListener("click", () => applyDiagramTheme(theme.id));
+    container.appendChild(button);
+  });
+}
+
+function setActiveDiagramTheme(themeId) {
+  activeDiagramThemeId = themeId;
+  document.querySelectorAll("[data-diagram-theme]").forEach(button => {
+    const active = button.dataset.diagramTheme === themeId;
+    button.classList.toggle("selected", active);
+    button.setAttribute("aria-checked", String(active));
+  });
+}
+
+function setDiagramLayout(layout) {
+  if (!DIAGRAM_LAYOUT_ENGINES.has(layout)) return;
+  closeLayoutEngineMenu();
+  const nextCode = setEmbeddedDiagramLayout(elements.editor.value, layout);
+  setEditorCode(nextCode, { diagramThemeId: activeDiagramThemeId });
+  const activeDiagram = getActiveDiagram();
+  if (activeDiagram) {
+    activeDiagram.layout = layout;
+    activeDiagram.layoutInCode = true;
+  }
+  if (isCompactMobileLayout()) closeMobileViewControls();
+  showToast(`${layout === "elk" ? "Adaptive" : "Hierarchical"} layout applied.`);
+}
+
+function toggleDirectionMenu(event) {
+  event.stopPropagation();
+  const opening = elements.directionMenu.hidden;
+  if (!opening) {
+    closeDirectionMenu();
+    return;
+  }
+  closeLayoutEngineMenu();
+  closeDiagramThemeMenu();
+  updateDirectionButtons();
+  elements.directionMenu.hidden = false;
+  elements.directionButton.setAttribute("aria-expanded", "true");
+  positionDirectionMenu();
+  elements.directionMenu.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+}
+
+function closeDirectionMenu(returnFocus = false) {
+  if (!elements.directionMenu || elements.directionMenu.hidden) return;
+  elements.directionMenu.hidden = true;
+  elements.directionButton.setAttribute("aria-expanded", "false");
+  if (returnFocus) elements.directionButton.focus({ preventScroll: true });
+}
+
+function positionDirectionMenu() {
+  if (!elements.directionMenu.hidden && isCompactMobileLayout() && window.innerWidth > window.innerHeight) {
+    const buttonRect = elements.directionButton.getBoundingClientRect();
+    const menuRect = elements.directionMenu.getBoundingClientRect();
+    const controlsRect = document.getElementById("previewViewControls").getBoundingClientRect();
+    const margin = 10;
+    let left = controlsRect.left - menuRect.width - margin;
+    if (left < margin) left = controlsRect.right + margin;
+    const maxLeft = Math.max(margin, window.innerWidth - menuRect.width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - menuRect.height - margin);
+    const desiredTop = buttonRect.top + buttonRect.height / 2 - menuRect.height / 2;
+    elements.directionMenu.style.left = `${Math.min(maxLeft, Math.max(margin, left))}px`;
+    elements.directionMenu.style.top = `${Math.min(maxTop, Math.max(margin, desiredTop))}px`;
+    return;
+  }
+  positionPreviewControlMenu(elements.directionMenu, elements.directionButton);
+}
+
+function updateLayoutEngineButton() {
+  const layout = activeLayoutEngine;
+  const layoutName = layout === "elk" ? "Adaptive" : "Hierarchical";
+  if (!elements.layoutEngineButton) return;
+  elements.layoutEngineButton.dataset.layoutEngine = layout;
+  elements.layoutEngineButton.setAttribute("aria-label", `Choose diagram layout. Current layout: ${layoutName}`);
+  elements.layoutEngineButton.title = `Layout: ${layoutName}`;
+  document.querySelectorAll("[data-layout-engine]").forEach(button => {
+    button.setAttribute("aria-checked", String(button.dataset.layoutEngine === layout));
+  });
+}
+
+function toggleLayoutEngineMenu(event) {
+  event.stopPropagation();
+  const opening = elements.layoutEngineMenu.hidden;
+  if (!opening) {
+    closeLayoutEngineMenu();
+    return;
+  }
+  closeDirectionMenu();
+  closeDiagramThemeMenu();
+  updateLayoutEngineButton();
+  elements.layoutEngineMenu.hidden = false;
+  elements.layoutEngineButton.setAttribute("aria-expanded", "true");
+  positionLayoutEngineMenu();
+  elements.layoutEngineMenu.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+}
+
+function closeLayoutEngineMenu(returnFocus = false) {
+  if (!elements.layoutEngineMenu || elements.layoutEngineMenu.hidden) return;
+  elements.layoutEngineMenu.hidden = true;
+  elements.layoutEngineButton.setAttribute("aria-expanded", "false");
+  if (returnFocus) elements.layoutEngineButton.focus({ preventScroll: true });
+}
+
+function positionLayoutEngineMenu() {
+  positionPreviewControlMenu(elements.layoutEngineMenu, elements.layoutEngineButton);
+}
+
+function toggleDiagramThemeMenu(event) {
+  event.stopPropagation();
+  const opening = elements.diagramThemeMenu.hidden;
+  if (!opening) {
+    closeDiagramThemeMenu();
+    return;
+  }
+  closeDirectionMenu();
+  closeLayoutEngineMenu();
+  elements.diagramThemeMenu.hidden = false;
+  elements.diagramThemeButton.setAttribute("aria-expanded", "true");
+  positionDiagramThemeMenu();
+  const activeOption = activeDiagramThemeId
+    ? elements.diagramThemeMenu.querySelector(`[data-diagram-theme="${activeDiagramThemeId}"]`)
+    : null;
+  (activeOption || elements.diagramThemeMenu.querySelector("[role='menuitemradio']"))?.focus({ preventScroll: true });
+}
+
+function closeDiagramThemeMenu(returnFocus = false) {
+  if (!elements.diagramThemeMenu || elements.diagramThemeMenu.hidden) return;
+  elements.diagramThemeMenu.hidden = true;
+  elements.diagramThemeButton.setAttribute("aria-expanded", "false");
+  if (returnFocus) elements.diagramThemeButton.focus({ preventScroll: true });
+}
+
+function positionDiagramThemeMenu() {
+  positionPreviewControlMenu(elements.diagramThemeMenu, elements.diagramThemeButton);
+}
+
+function positionPreviewControlMenu(menu, button) {
+  if (menu.hidden) return;
+  const panelRect = elements.previewPanel.getBoundingClientRect();
+  const buttonRect = button.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const margin = 10;
+  const maxLeft = Math.max(margin, panelRect.width - menuRect.width - margin);
+  const desiredLeft = buttonRect.left - panelRect.left + buttonRect.width / 2 - menuRect.width / 2;
+  let top = buttonRect.top - panelRect.top - menuRect.height - margin;
+  if (top < margin) top = buttonRect.bottom - panelRect.top + margin;
+  const maxTop = Math.max(margin, panelRect.height - menuRect.height - margin);
+  menu.style.left = `${Math.min(maxLeft, Math.max(margin, desiredLeft))}px`;
+  menu.style.top = `${Math.min(maxTop, Math.max(margin, top))}px`;
+}
+
 function centerView(options = {}) {
   const svg = elements.preview.querySelector("svg");
   if (!svg) return;
@@ -336,6 +539,7 @@ function finalizeRenderedPreview(requestId) {
     if (requestId !== renderSequence) return;
     fitDiagramToWindow({ behavior: "auto" });
     openPendingNodePopup();
+    openPendingEdgePopup();
   });
 }
 

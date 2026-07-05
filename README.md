@@ -18,7 +18,7 @@ Everything required to run the editor is stored in this repository. Diagrams, pr
 ## Quick start
 
 1. Keep the documented folder structure intact.
-2. Confirm that `vendor/mermaid.min.js` exists.
+2. Confirm that the local Mermaid, ELK layout, jsPDF, and svg2pdf bundles exist under `vendor/`.
 3. Open `index.html` in a modern browser.
 4. Edit Mermaid code, drag a shape into the preview, or load a template.
 5. Use **Diagrams** for local projects and recovery history.
@@ -28,13 +28,13 @@ No installation, build command, account, or local server is required. The applic
 
 ## Version 1.0 highlights
 
-- Line-numbered Mermaid code editing with debounced rendering and clear syntax errors
-- Visual editing for nodes, node images, arrows, subgraphs, colors, labels, borders, and shapes
+- Line-numbered Mermaid code editing with debounced rendering and line-aware syntax errors
+- Visual editing for nodes, node images, links, arrows, subgraphs, colors, multiline labels, borders, and shapes
 - Mouse, keyboard, and touch-friendly drag-and-drop workflows
 - Multiple locally saved diagrams with automatic version history
 - Built-in templates and a searchable Mermaid 11 flowchart shape library
-- SVG, PNG, JPG, and PDF export with format-specific controls
-- Zoom, pan, fit, center, direction, theme, fullscreen, undo, and redo controls
+- SVG, PNG, JPG, and vector PDF export with format-specific controls
+- Zoom, pan, fit, four flow directions, two layout engines, diagram themes, fullscreen, undo, and redo controls
 - Responsive resizable workspace, collapsible editor sections, compact line-number gutters, and a full-width mobile action menu
 - Focus-managed dialogs, screen-reader labels, visible focus states, and touch-sized controls
 - Fully local Mermaid.js runtime with no required network access
@@ -62,17 +62,18 @@ No installation, build command, account, or local server is required. The applic
 - The line-number gutter automatically narrows on tablet and mobile screens and grows when the line count gains another digit
 - Automatic rendering after typing, with adaptive delays for larger diagrams
 - Manual **Render** action for retrying after an error or forcing an immediate refresh
-- Syntax errors shown without breaking or replacing the application interface
+- Syntax errors show the actual editor line and a focused hint where one can be determined
 - Automatic fit and center after successful rendering
 - Undo and redo history for code and visual edits
 - Editable diagram name used for local storage and downloaded filenames
 
 ### Visual preview editor
 
-- Click a node to edit its label, shape, image, fill, text color, and border color
+- Click a node to edit its multiline label, bold/italic formatting, hyperlink, shape, image, fill, text color, and border color
 - Convert a node to an image node with a relative path, `data:image` URL, or web image URL
-- Click an arrow to edit its label, line style, start marker, end marker, and color
+- Click an arrow to edit its multiline label, line style, line thickness, start marker, end marker, and color
 - Click a subgraph to edit its title, fill, text color, and border color
+- Use **Go to code** from a node, arrow, or subgraph editor to expand the code panel and select its source
 - Delete nodes, arrows, or subgraphs from their editing panels
 - Hover over a node to create a connected shape
 - Start an edge from one node or subgraph, then select its destination
@@ -82,7 +83,10 @@ No installation, build command, account, or local server is required. The applic
 - Automatically remove a subgraph when its final node is moved out
 - Pan by dragging empty preview space
 - Zoom with controls, an editable percentage, the mouse wheel, or a two-finger pinch
-- Fit, center, fullscreen, light/dark preview themes, and TD/LR flow direction controls
+- Fit, fullscreen, and light/dark preview controls
+- Top-to-bottom, bottom-to-top, left-to-right, and right-to-left flow directions
+- Adaptive (ELK, default) and Hierarchical (Dagre) layout engines
+- Coordinated diagram themes that style nodes, subgraphs, and arrows together
 
 ### Flowchart shape library
 
@@ -152,9 +156,9 @@ All exports are generated locally in the browser.
 | SVG | Export scale, padding, background color, transparent background | Web, editing, and resolution-independent output |
 | PNG | Output size, padding, background color, transparent background | Lossless images and documents |
 | JPG | Output size, padding, quality, solid background color | Smaller raster files |
-| PDF | Diagram resolution, padding, page size, orientation, solid background color | Sharing and printing |
+| PDF | Padding, background color, page size, orientation | Scalable sharing and printing |
 
-PDF export automatically recommends landscape orientation for wide diagrams and portrait orientation for tall or square diagrams. The orientation can still be changed manually.
+PDF export keeps the diagram as vector content for clean zooming and preserves supported node hyperlinks. It automatically recommends landscape orientation for wide diagrams and portrait orientation for tall or square diagrams. The orientation can still be changed manually.
 
 ### Large-diagram behavior
 
@@ -215,7 +219,14 @@ assets/
     ├── diagram.js
     └── main.js
 vendor/
-└── mermaid.min.js
+├── mermaid.min.js
+├── mermaid-layout-elk/
+│   ├── mermaid-layout-elk.iife.min.js
+│   └── LICENSE.txt
+├── jspdf.umd.min.js
+├── svg2pdf.umd.min.js
+├── LICENSE-jspdf.txt
+└── LICENSE-svg2pdf.txt
 ```
 
 JavaScript files are loaded as ordered classic scripts. This keeps the code organized without requiring ES modules, a development server, or a build step.
@@ -235,13 +246,16 @@ The previous root-level `app.js`, `style.css`, `logo.png`, and `mermaid.min.js` 
 
 ## Mermaid.js and offline setup
 
-The application loads Mermaid from the local vendor file:
+The application loads all runtime libraries from local vendor files:
 
 ```html
 <script src="./vendor/mermaid.min.js"></script>
+<script src="./vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js"></script>
+<script src="./vendor/jspdf.umd.min.js"></script>
+<script src="./vendor/svg2pdf.umd.min.js"></script>
 ```
 
-It does not import Mermaid from a CDN or use an ES module package at runtime.
+Mermaid renders diagrams, the ELK bundle provides the Adaptive layout, and jsPDF with svg2pdf creates vector PDF exports. The application does not load these libraries from a CDN or require ES modules at runtime.
 
 If `mermaid.min.js` is missing or needs to be replaced:
 
@@ -252,7 +266,7 @@ If `mermaid.min.js` is missing or needs to be replaced:
 5. Place it in the `vendor` folder and keep the filename exactly `mermaid.min.js`.
 6. Open `index.html` and confirm that the default diagram renders.
 
-This is a one-time dependency download. The editor itself loads the bundle locally afterward.
+Keep the other vendor files and their license files in the paths shown above. The editor loads every runtime dependency locally afterward.
 
 ## Run locally
 
@@ -304,7 +318,7 @@ flowchart TD
     style n1 fill:#ffffff,color:#000000,stroke:#333333
 ```
 
-The visual tools support common legacy node declarations, Mermaid's expanded `@{ shape: ... }` syntax, Mermaid image nodes, standard flowchart links, styles, subgraphs, and nested subgraphs. Highly customized Mermaid expressions may render correctly but require direct code editing rather than visual manipulation.
+The visual tools support implicit endpoint nodes, common legacy node declarations, Mermaid's expanded `@{ shape: ... }` syntax, Mermaid image nodes, node hyperlinks, standard flowchart links, styles, subgraphs, nested subgraphs, and connections between nodes and subgraphs. Highly customized Mermaid expressions may render correctly but require direct code editing rather than visual manipulation.
 
 ## Troubleshooting
 
@@ -314,10 +328,17 @@ The visual tools support common legacy node declarations, Mermaid's expanded `@{
 - Confirm the filename and letter casing are exact
 - Re-download the browser bundle if the file is incomplete
 
+### Adaptive layout or vector PDF export is unavailable
+
+- Confirm that `vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js` exists for Adaptive layout
+- Confirm that `vendor/jspdf.umd.min.js` and `vendor/svg2pdf.umd.min.js` exist for vector PDF export
+- Keep the vendor paths unchanged because `index.html` loads them directly
+
 ### The preview shows a syntax error
 
-- Read the error shown above the preview
-- Check the most recently edited line
+- Read the reported editor line and pointer shown above the preview
+- Follow the focused hint when the editor recognizes an incomplete construct such as a missing `end`
+- Check the most recently edited line if no specific hint is available
 - Load a built-in template to compare valid syntax
 - Use **Diagrams → History** if an accidental edit replaced working code
 
@@ -347,7 +368,7 @@ GitHub Pages is hosting, not a guaranteed offline installer. Keep a local copy o
 ## Technical design
 
 - Plain HTML5, CSS, and vanilla JavaScript
-- Local Mermaid.js browser bundle
+- Local Mermaid.js, ELK layout, jsPDF, and svg2pdf browser bundles
 - Strict Mermaid security level
 - Browser `localStorage` persistence
 - Browser File, Blob, Canvas, SVG, and Fullscreen APIs
