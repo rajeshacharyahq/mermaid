@@ -939,6 +939,20 @@ body.resizing-shapes { cursor: row-resize; user-select: none; }
   .workspace.editor-sections-collapsed .fold-button .collapsed-section-icon { display: block; }
 }
 
+@media (max-width: 700px) and (orientation: portrait) {
+  .workspace:not(.editor-sections-collapsed) {
+    grid-template-rows: auto 8px minmax(360px, 1fr);
+  }
+
+  .workspace:not(.editor-sections-collapsed) .editor-panel {
+    min-height: 294px;
+  }
+
+  .workspace:not(.editor-sections-collapsed) .editor-panel:not(.code-collapsed):has(.shape-library:not(.shapes-collapsed)) {
+    min-height: 492px;
+  }
+}
+
 @media (pointer: coarse) {
   button, input, select { min-height: 44px; }
   .toolbar-group > button, .toolbar-group > .toolbar-dropdown > button { min-height: 44px; }
