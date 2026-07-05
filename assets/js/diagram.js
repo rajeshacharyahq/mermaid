@@ -598,6 +598,17 @@ function deleteSelectedEdge() {
     showToast("This connector shares a chained or fan-out statement. Delete it directly in Mermaid code.");
     return;
   }
+  openConfirmationModal({
+    title: "Delete this arrow?",
+    message: `Delete the arrow from ${edge.source} to ${edge.target}? This action cannot be undone.`,
+    confirmLabel: "Delete arrow",
+    danger: true,
+    returnFocus: document.getElementById("deleteEdgeButton"),
+    onConfirm: () => deleteEdge(edge)
+  });
+}
+
+function deleteEdge(edge) {
   const lines = elements.editor.value.split(/\r?\n/);
   const edgeLine = lines[edge.lineIndex];
   const targetDefinition = edgeLine.match(new RegExp(`${escapeRegExp(edge.target)}\\s*(@\\{.*\\}|\\[.*\\]|\\(.*\\)|\\{.*\\})\\s*$`));
@@ -1270,7 +1281,17 @@ function finishEdgeCreation(targetId) {
 function deleteSelectedNode() {
   if (!selectedNodeId) return;
   const nodeId = selectedNodeId;
-  if (!window.confirm(`Delete node ${nodeId} and its connected edges?`)) return;
+  openConfirmationModal({
+    title: `Delete node ${nodeId}?`,
+    message: "The node and every arrow connected to it will be deleted. This action cannot be undone.",
+    confirmLabel: "Delete node",
+    danger: true,
+    returnFocus: document.getElementById("deleteNodeButton"),
+    onConfirm: () => deleteNode(nodeId)
+  });
+}
+
+function deleteNode(nodeId) {
   const escapedId = escapeRegExp(nodeId);
   const styleLine = new RegExp(`^\\s*style\\s+${escapedId}(?:\\s|$)`);
   const lines = elements.editor.value.split(/\r?\n/);
