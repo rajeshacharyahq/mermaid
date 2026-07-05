@@ -52,9 +52,9 @@
       <div class="toolbar-group" role="group" aria-label="Files and export">
         <div class="toolbar-dropdown export-menu-wrap">
           <button type="button" id="mmdMenuButton" class="icon-label-button" aria-haspopup="menu" aria-expanded="false" aria-controls="mmdMenu" title="Import or download Mermaid source files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h5M9 13h6M9 17h6"/></svg><span>MMD</span><span class="chevron" aria-hidden="true">&#9662;</span></button>
-          <div id="mmdMenu" class="export-menu" role="menu" hidden>
-            <button type="button" id="downloadButton" role="menuitem" title="Download the current Mermaid source code as an editable .mmd file">Download .mmd</button>
-            <button type="button" id="importButton" role="menuitem" title="Open a local .mmd file and replace the current diagram">Import .mmd</button>
+          <div id="mmdMenu" class="export-menu format-menu mmd-menu" role="menu" hidden>
+            <button type="button" id="downloadButton" role="menuitem" title="Download the current Mermaid source code as an editable .mmd file"><span class="format-badge">MMD</span><span><strong>Download source</strong><small>Save editable Mermaid code</small></span></button>
+            <button type="button" id="importButton" role="menuitem" title="Open a local .mmd file and replace the current diagram"><span class="format-badge">FILE</span><span><strong>Import source</strong><small>Open a local .mmd file</small></span></button>
           </div>
         </div>
         <div class="toolbar-dropdown export-menu-wrap">
@@ -92,7 +92,6 @@
       <div id="codePanelContent" class="code-panel-content">
         <button type="button" id="copyButton" class="editor-copy-button" title="Copy Mermaid code" aria-label="Copy Mermaid code">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
-          <span>Copy code</span>
         </button>
         <div id="codeLineNumbers" class="code-line-numbers" aria-hidden="true"></div>
         <textarea id="codeEditor" aria-label="Mermaid code editor" spellcheck="false" wrap="off"></textarea>
