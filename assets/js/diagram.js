@@ -1504,6 +1504,7 @@ function findNodeInCode(code, nodeId) {
 }
 
 function findImplicitNodeInCode(code, nodeId) {
+  const escapedId = escapeRegExp(nodeId);
   const lines = code.split(/\r?\n/);
   const lineStarts = [0];
   for (const newline of code.matchAll(/\r\n|\n|\r/g)) lineStarts.push(newline.index + newline[0].length);
