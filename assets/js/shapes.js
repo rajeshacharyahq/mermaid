@@ -37,10 +37,23 @@ function createShapeLibrary() {
     button.dataset.shapeLabel = label;
     button.setAttribute("aria-label", `Add ${label} to the diagram. Drag to choose a location.`);
     button.innerHTML = `<span class="shape-thumbnail" aria-hidden="true"><span class="library-glyph ${shape}"></span></span><span>${label}</span><span class="shape-touch-handle" aria-hidden="true" title="Drag shape"><svg viewBox="0 0 16 20"><circle cx="5" cy="4" r="1"/><circle cx="11" cy="4" r="1"/><circle cx="5" cy="10" r="1"/><circle cx="11" cy="10" r="1"/><circle cx="5" cy="16" r="1"/><circle cx="11" cy="16" r="1"/></svg></span>`;
+    let nativeDragPreview = null;
     button.addEventListener("dragstart", event => {
       event.dataTransfer.effectAllowed = "copy";
       event.dataTransfer.setData("application/x-mermaid-shape", shape);
       event.dataTransfer.setData("text/plain", shape);
+      nativeDragPreview?.remove();
+      nativeDragPreview = createLibraryShapeDragPreview(button);
+      nativeDragPreview.classList.add("native-shape-drag-preview");
+      document.body.appendChild(nativeDragPreview);
+      event.dataTransfer.setDragImage(nativeDragPreview, 24, 22);
+      button.classList.add("library-shape-dragging");
+      requestAnimationFrame(() => nativeDragPreview?.remove());
+    });
+    button.addEventListener("dragend", () => {
+      nativeDragPreview?.remove();
+      nativeDragPreview = null;
+      button.classList.remove("library-shape-dragging");
     });
     button.addEventListener("click", event => {
       if (event.detail === 0) insertLibraryShapeAtPoint(shape, 0, 0, null, true);
@@ -132,6 +145,14 @@ function startLibraryShapePointerDrag(event, button) {
   event.preventDefault();
 }
 
+function createLibraryShapeDragPreview(button) {
+  const preview = document.createElement("div");
+  preview.className = "shape-drag-preview";
+  const thumbnail = button.querySelector(".shape-thumbnail")?.cloneNode(true);
+  if (thumbnail) preview.appendChild(thumbnail);
+  return preview;
+}
+
 function moveLibraryShapePointerDrag(event) {
   if (!activeLibraryShapeDrag || event.pointerId !== activeLibraryShapeDrag.pointerId) return;
   const drag = activeLibraryShapeDrag;
@@ -141,9 +162,8 @@ function moveLibraryShapePointerDrag(event) {
     drag.dragging = true;
     drag.hitTestCache = createPreviewHitTestCache();
     drag.button.classList.add("library-shape-dragging");
-    drag.ghost = document.createElement("div");
-    drag.ghost.className = "node-drag-ghost shape-drag-ghost";
-    drag.ghost.textContent = `Add ${drag.label}`;
+    drag.ghost = createLibraryShapeDragPreview(drag.button);
+    drag.ghost.classList.add("node-drag-ghost", "shape-drag-ghost");
     document.body.appendChild(drag.ghost);
     hideQuickAddButton();
     closeNodePopup();

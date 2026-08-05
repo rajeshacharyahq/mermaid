@@ -44,7 +44,7 @@ function handlePreviewClick(event) {
   if (!cluster || !elements.preview.contains(cluster) || suppressSubgraphClick) return;
   if (target.closest(".edgePath, .flowchart-link")) return;
   const label = target.closest(".cluster-label");
-  openSubgraphPopup(getSubgraphId(cluster), (label || cluster).getBoundingClientRect(), cluster);
+  openClickedSubgraph(cluster, (label || cluster).getBoundingClientRect());
 }
 
 function handlePreviewKeydown(event) {
@@ -80,7 +80,7 @@ function handlePreviewKeydown(event) {
   if (!cluster) return;
   event.preventDefault();
   const label = cluster.querySelector(".cluster-label") || cluster;
-  openSubgraphPopup(getSubgraphId(cluster), label.getBoundingClientRect(), cluster);
+  openClickedSubgraph(cluster, label.getBoundingClientRect());
 }
 
 function handlePreviewMouseOver(event) {
@@ -143,6 +143,7 @@ function bindRenderedNodes() {
     node.setAttribute("tabindex", "0");
     node.setAttribute("role", "button");
     const nodeId = getNodeId(node) || "node";
+    if (nodeId !== "node") node.dataset.id = nodeId;
     const label = node.textContent.replace(/\s+/g, " ").trim();
     node.setAttribute("aria-label", `Edit node ${nodeId}${label && label !== nodeId ? `: ${label}` : ""}`);
     bindRenderedNodeLink(node, nodeId);
@@ -217,9 +218,11 @@ function cleanupNodeDrag() {
 }
 
 function bindRenderedSubgraphs() {
-  elements.preview.querySelectorAll("g.cluster").forEach(cluster => {
+  const clusters = Array.from(elements.preview.querySelectorAll("g.cluster"));
+  const resolvedIds = resolveRenderedSubgraphIds(clusters);
+  clusters.forEach(cluster => {
     const label = cluster.querySelector(".cluster-label") || cluster.querySelector(":scope > text");
-    const subgraphId = getSubgraphId(cluster) || "subgraph";
+    const subgraphId = resolvedIds.get(cluster) || getSubgraphId(cluster) || "subgraph";
     if (subgraphId !== "subgraph") cluster.dataset.id = subgraphId;
     const title = label?.textContent.replace(/\s+/g, " ").trim();
     cluster.setAttribute("tabindex", "0");
@@ -318,7 +321,7 @@ function openSubgraphPopup(subgraphId, labelRect, clusterElement) {
   selectedSubgraphElement = clusterElement;
   if (selectedSubgraphElement) selectedSubgraphElement.classList.add("subgraph-selected");
   document.getElementById("subgraphId").textContent = subgraphId;
-  document.getElementById("subgraphTitleInput").value = titleMatch ? titleMatch[1] : subgraphId;
+  document.getElementById("subgraphTitleInput").value = titleMatch ? titleMatch[1] : getSubgraphSourceTitle(range, elements.editor.value);
   const style = findSubgraphStyle(subgraphId);
   setColorInputState(document.getElementById("subgraphFillColor"), style.fill, style.explicit.has("fill"));
   setColorInputState(document.getElementById("subgraphTextColor"), style.color, style.explicit.has("color"));
@@ -363,6 +366,19 @@ function closeSubgraphPopup() {
   selectedSubgraphElement = null;
   selectedSubgraphId = null;
   updateMobileEditorBackdrop();
+}
+
+function openClickedSubgraph(clusterElement, labelRect) {
+  const subgraphId = getSubgraphId(clusterElement);
+  if (!subgraphId) {
+    showToast("This subgraph ID could not be resolved.");
+    return;
+  }
+  if (pendingEdgeSource) {
+    finishEdgeCreation(subgraphId);
+    return;
+  }
+  openSubgraphPopup(subgraphId, labelRect, clusterElement);
 }
 
 function saveSubgraphTitle() {
@@ -458,6 +474,14 @@ function getSubgraphId(cluster) {
     const titleMatches = ranges.filter(range => normalizeSubgraphTitle(getSubgraphSourceTitle(range, elements.editor.value)) === renderedTitle);
     if (titleMatches.length === 1) return titleMatches[0].id;
   }
+
+  // ELK currently emits "[object Object]" as every cluster DOM id. When
+  // visible titles are duplicated, map the remaining clusters by their stable
+  // source declaration order. Mermaid preserves that order in the SVG.
+  const renderedClusters = Array.from(elements.preview.querySelectorAll("g.cluster"));
+  const clusterIndex = renderedClusters.indexOf(cluster);
+  const sourceOrderedRanges = [...ranges].sort((first, second) => first.start - second.start);
+  if (clusterIndex >= 0 && renderedClusters.length === sourceOrderedRanges.length) return sourceOrderedRanges[clusterIndex]?.id || null;
   return null;
 }
 
@@ -466,7 +490,9 @@ function getSubgraphSourceTitle(range, code) {
   const quotedTitle = line.match(/\[\s*"([^"]*)"\s*\]\s*(?:%%.*)?$/);
   if (quotedTitle) return quotedTitle[1];
   const plainTitle = line.match(/\[\s*([^\]]*?)\s*\]\s*(?:%%.*)?$/);
-  return plainTitle ? plainTitle[1] : range.id;
+  if (plainTitle) return plainTitle[1];
+  const titleOnly = line.match(/^\s*subgraph\s+(.+?)(?:\s*%%.*)?$/i)?.[1]?.trim();
+  return titleOnly ? titleOnly.replace(/^("|')([\s\S]*)\1$/, "$2") : range.id;
 }
 
 function normalizeSubgraphTitle(value) {
@@ -520,6 +546,68 @@ function bindRenderedEdges() {
     hitArea._visibleEdgePath = path;
     path.parentNode.insertBefore(hitArea, path);
   });
+}
+
+function resolveRenderedSubgraphIds(clusters) {
+  const code = elements.editor.value;
+  const lines = code.split(/\r?\n/);
+  const ranges = [...getSubgraphRanges(code)].sort((first, second) => first.start - second.start);
+  const assignments = new Map();
+  const assignedIds = new Set();
+  const assign = (cluster, range) => {
+    if (!cluster || !range || assignments.has(cluster) || assignedIds.has(range.id)) return false;
+    assignments.set(cluster, range.id);
+    assignedIds.add(range.id);
+    return true;
+  };
+
+  clusters.forEach(cluster => {
+    const rawId = cluster.dataset.id || cluster.id || "";
+    const range = ranges.find(candidate => rawId === candidate.id || rawId.endsWith(`-${candidate.id}`) || rawId.includes(`flowchart-${candidate.id}`));
+    assign(cluster, range);
+  });
+
+  clusters.forEach(cluster => {
+    if (assignments.has(cluster)) return;
+    const renderedTitle = normalizeSubgraphTitle(cluster.querySelector(".cluster-label")?.textContent || cluster.querySelector(":scope > text")?.textContent || "");
+    const candidates = ranges.filter(range => !assignedIds.has(range.id) && normalizeSubgraphTitle(getSubgraphSourceTitle(range, code)) === renderedTitle);
+    if (candidates.length === 1) assign(cluster, candidates[0]);
+  });
+
+  const renderedNodes = Array.from(elements.preview.querySelectorAll(RENDERED_NODE_SELECTOR), node => {
+    const rect = node.getBoundingClientRect();
+    return { id: getNodeId(node), x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }).filter(node => node.id);
+  const rangeNodeIds = new Map(ranges.map(range => {
+    const block = lines.slice(range.start + 1, range.end).join("\n");
+    const ids = new Set(renderedNodes.filter(node => new RegExp(`(^|[^\\w-])${escapeRegExp(node.id)}(?=$|[^\\w-])`).test(block)).map(node => node.id));
+    return [range.id, ids];
+  }));
+  const clusterNodeIds = new Map(clusters.map(cluster => {
+    const rect = cluster.getBoundingClientRect();
+    const ids = new Set(renderedNodes.filter(node => node.x >= rect.left && node.x <= rect.right && node.y >= rect.top && node.y <= rect.bottom).map(node => node.id));
+    return [cluster, ids];
+  }));
+
+  const scoredPairs = [];
+  clusters.filter(cluster => !assignments.has(cluster)).forEach(cluster => {
+    const clusterIds = clusterNodeIds.get(cluster);
+    if (!clusterIds?.size) return;
+    ranges.filter(range => !assignedIds.has(range.id)).forEach(range => {
+      const sourceIds = rangeNodeIds.get(range.id) || new Set();
+      const intersection = [...clusterIds].filter(id => sourceIds.has(id)).length;
+      if (!intersection) return;
+      const difference = clusterIds.size + sourceIds.size - intersection * 2;
+      const exactBonus = difference === 0 ? 1000 : 0;
+      scoredPairs.push({ cluster, range, score: exactBonus + intersection * 100 - difference * 10 });
+    });
+  });
+  scoredPairs.sort((first, second) => second.score - first.score).forEach(pair => assign(pair.cluster, pair.range));
+
+  const remainingClusters = clusters.filter(cluster => !assignments.has(cluster));
+  const remainingRanges = ranges.filter(range => !assignedIds.has(range.id));
+  if (remainingClusters.length === remainingRanges.length) remainingClusters.forEach((cluster, index) => assign(cluster, remainingRanges[index]));
+  return assignments;
 }
 
 function bindRenderedNodeLink(node, nodeId) {
@@ -1200,9 +1288,11 @@ function openClickedNode(nodeElement) {
 }
 
 function getNodeId(nodeElement) {
-  const dataNode = nodeElement.closest("[data-id]");
-  if (dataNode && dataNode.dataset.id) return dataNode.dataset.id;
-  const rawId = nodeElement.id || "";
+  if (!(nodeElement instanceof Element)) return "";
+  const renderedNode = nodeElement.matches(RENDERED_NODE_SELECTOR) ? nodeElement : nodeElement.closest(RENDERED_NODE_SELECTOR);
+  if (!renderedNode) return "";
+  if (renderedNode.dataset.id) return renderedNode.dataset.id;
+  const rawId = renderedNode.id || "";
   const flowchartMarker = rawId.lastIndexOf("flowchart-");
   if (flowchartMarker !== -1) {
     return rawId.slice(flowchartMarker + "flowchart-".length).replace(/-\d+$/, "");
@@ -1843,8 +1933,12 @@ function cancelEdgeCreation(showMessage = true) {
 function finishEdgeCreation(targetId) {
   const sourceId = pendingEdgeSource;
   if (!sourceId) return;
+  if (!targetId) {
+    showToast("This destination ID could not be resolved.");
+    return;
+  }
   if (sourceId === targetId) {
-    showToast("Choose a different destination node.");
+    showToast("Choose a different destination node or subgraph.");
     return;
   }
   pendingEdgeSource = null;

@@ -100,14 +100,19 @@ No installation, build command, account, or local server is required. The applic
 
 ### Templates and onboarding
 
-The **Templates** menu includes ready-to-edit examples for:
+The **Templates** menu includes 75 ready-to-edit examples organized into nine categories:
 
-- Quick start
-- Approval workflow
-- System architecture
-- Incident response
-- Team collaboration
-- VPN connectivity between on-premises and Azure data centers
+- Getting Started
+- Business Processes
+- System Architecture
+- Cloud Infrastructure
+- Network & Security
+- DevOps & Software Delivery
+- IT Operations
+- Project & Team Collaboration
+- Data & Integration
+
+Search by template name, description, diagram type, or tags, or narrow the library with the category filter.
 
 Loading a template saves a recovery snapshot before replacing the current diagram.
 

@@ -578,6 +578,7 @@ function handleFullscreenChange() {
   hideQuickAddButton();
   closeNodePopup();
   closeEdgePopup();
+  closeSubgraphPopup();
   if (isFullscreen) {
     requestAnimationFrame(() => requestAnimationFrame(fitDiagramToWindow));
   } else {

@@ -38,14 +38,24 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6"/></svg><span>Render</span>
         </button>
         <div class="toolbar-dropdown export-menu-wrap">
-          <button type="button" id="templateMenuButton" class="icon-label-button" aria-haspopup="menu" aria-expanded="false" aria-controls="templateMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v5H4zM14 15h6v5h-6z"/></svg><span>Templates</span><span class="chevron" aria-hidden="true">&#9662;</span></button>
-          <div id="templateMenu" class="export-menu template-menu" role="menu" hidden>
-            <button type="button" role="menuitem" data-template="quick-start"><strong>Quick start</strong><small>Basic connected flow</small></button>
-            <button type="button" role="menuitem" data-template="approval"><strong>Approval workflow</strong><small>Decisions and labeled arrows</small></button>
-            <button type="button" role="menuitem" data-template="system"><strong>System architecture</strong><small>Services, database and subgraph</small></button>
-            <button type="button" role="menuitem" data-template="incident"><strong>Incident response</strong><small>Colors and different shapes</small></button>
-            <button type="button" role="menuitem" data-template="collaboration"><strong>Team collaboration</strong><small>Subgraphs and two-ended links</small></button>
-            <button type="button" role="menuitem" data-template="vpn-connectivity"><strong>VPN connectivity</strong><small>On-premises to Azure datacenter</small></button>
+          <button type="button" id="templateMenuButton" class="icon-label-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="templateMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v5H4zM14 15h6v5h-6z"/></svg><span>Templates</span><span class="chevron" aria-hidden="true">&#9662;</span></button>
+          <div id="templateMenu" class="export-menu template-menu" role="dialog" aria-label="Diagram template library" hidden>
+            <div class="template-menu-controls">
+              <label class="visually-hidden" for="templateSearch">Search templates</label>
+              <div class="template-search-row">
+                <input id="templateSearch" type="search" placeholder="Search templates or tags" autocomplete="off">
+                <button type="button" id="templateSearchButton" class="template-search-button" aria-label="Search templates" title="Search templates">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+                </button>
+              </div>
+              <label class="visually-hidden" for="templateCategoryFilter">Filter templates by category</label>
+              <select id="templateCategoryFilter" aria-label="Filter templates by category">
+                <option value="all">All categories</option>
+              </select>
+              <p id="templateMenuSummary" class="template-menu-summary" aria-live="polite"></p>
+            </div>
+            <div id="templateMenuList" class="template-menu-list"></div>
+            <p id="templateMenuEmpty" class="template-menu-empty" hidden>No templates match your search.</p>
           </div>
         </div>
       </div>
@@ -126,7 +136,7 @@
       <div id="errorMessage" class="error-message" role="alert" hidden></div>
       <div id="edgeCreationMode" class="edge-creation-mode" role="status" aria-live="polite" hidden>
         <span class="edge-mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="12" r="2.5"/><path d="M8 12h8M13 8l4 4-4 4"/></svg></span>
-        <span class="edge-mode-copy"><strong>Select destination node</strong><small>Connecting from <code id="edgeCreationSource"></code></small></span>
+        <span class="edge-mode-copy"><strong>Select destination node or subgraph</strong><small>Connecting from <code id="edgeCreationSource"></code></small></span>
         <button type="button" id="cancelEdgeCreationButton">Cancel</button>
       </div>
       <div id="diagramPreview" class="diagram-preview" role="region" aria-label="Rendered diagram preview"></div>
@@ -367,7 +377,7 @@
       <button type="button" class="node-tool active" data-subgraph-panel="label"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M12 6v12M8 18h8"/></svg></span><span>Edit label</span></button>
       <button type="button" class="node-tool" data-subgraph-panel="border"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span><span>Edit border</span></button>
       <button type="button" id="deleteSubgraphButton" class="node-tool destructive" title="Delete selected subgraph (Delete or Ctrl/Cmd+Delete while editing)"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg></span><span>Delete</span></button>
-      <button type="button" id="createSubgraphEdgeButton" class="node-tool" title="Start a connection from this subgraph, then select the destination node" data-tooltip="Start here, then select the destination node" aria-label="Create an edge from this subgraph, then select the destination node"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg></span><span>Create edge</span></button>
+      <button type="button" id="createSubgraphEdgeButton" class="node-tool" title="Start a connection from this subgraph, then select the destination node or subgraph" data-tooltip="Start here, then select the destination node or subgraph" aria-label="Create an edge from this subgraph, then select the destination node or subgraph"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg></span><span>Create edge</span></button>
     </div>
     <div class="subgraph-panel" data-subgraph-content="label">
       <label for="subgraphTitleInput">Edit label</label>

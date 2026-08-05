@@ -70,7 +70,7 @@ function bindEvents() {
   document.getElementById("createSnapshotButton").addEventListener("click", createManualSnapshot);
   document.getElementById("mmdMenuButton").addEventListener("click", toggleMmdMenu);
   document.getElementById("templateMenuButton").addEventListener("click", toggleTemplateMenu);
-  document.querySelectorAll("[data-template]").forEach(button => button.addEventListener("click", () => loadDiagramTemplate(button.dataset.template)));
+  initializeTemplateLibrary();
   document.getElementById("downloadButton").addEventListener("click", () => { closeMmdMenu(); downloadCode(); });
   document.getElementById("importButton").addEventListener("click", () => { closeMmdMenu(); elements.fileInput.click(); });
   document.getElementById("copyButton").addEventListener("click", copyCode);
@@ -107,6 +107,7 @@ function bindEvents() {
   document.getElementById("editorBackdrop").addEventListener("click", () => {
     closeNodePopup();
     closeEdgePopup();
+    closeSubgraphPopup();
   });
   const nodePopupDragHandle = document.getElementById("nodePopupDragHandle");
   nodePopupDragHandle.addEventListener("pointerdown", startNodePopupDrag);
@@ -302,6 +303,7 @@ function handleMobileToolbarAction(event) {
   if (!isCompactMobileLayout()) return;
   const button = event.target.closest("button");
   if (!button || button.hasAttribute("aria-haspopup")) return;
+  if (button.closest("#templateMenu") && !button.matches("[data-template]")) return;
   closeMobileToolbar();
 }
 
@@ -329,7 +331,8 @@ function closeMobileViewControls() {
 function setupAccessibleMenu(buttonId, menuId) {
   const button = document.getElementById(buttonId);
   const menu = document.getElementById(menuId);
-  const getItems = () => Array.from(menu.querySelectorAll('[role="menuitem"]:not(:disabled)'));
+  const getItems = () => Array.from(menu.querySelectorAll('[role="menuitem"]:not(:disabled), [data-template]:not(:disabled)'))
+    .filter(item => !item.closest("[hidden]"));
 
   button.addEventListener("keydown", event => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -340,6 +343,15 @@ function setupAccessibleMenu(buttonId, menuId) {
   });
 
   menu.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      menu.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+      button.focus();
+      return;
+    }
+    if (event.target.matches("input, select, textarea")) return;
     const items = getItems();
     const currentIndex = items.indexOf(document.activeElement);
     let nextIndex = null;
@@ -351,14 +363,108 @@ function setupAccessibleMenu(buttonId, menuId) {
       event.preventDefault();
       items[nextIndex].focus();
     }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      menu.hidden = true;
-      button.setAttribute("aria-expanded", "false");
-      button.focus();
-    }
   });
+}
+
+function initializeTemplateLibrary() {
+  const menu = document.getElementById("templateMenu");
+  const list = document.getElementById("templateMenuList");
+  const search = document.getElementById("templateSearch");
+  const searchButton = document.getElementById("templateSearchButton");
+  const categoryFilter = document.getElementById("templateCategoryFilter");
+
+  TEMPLATE_CATEGORIES.forEach(category => {
+    const option = document.createElement("option");
+    option.value = category.id;
+    option.textContent = category.name;
+    categoryFilter.append(option);
+  });
+
+  const updateResults = () => renderTemplateLibrary();
+  search.addEventListener("input", updateResults);
+  search.addEventListener("search", updateResults);
+  search.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    updateResults();
+  });
+  searchButton.addEventListener("click", () => {
+    updateResults();
+    search.focus({ preventScroll: true });
+  });
+  categoryFilter.addEventListener("change", updateResults);
+  list.addEventListener("click", event => {
+    const button = event.target.closest("[data-template]");
+    if (button) loadDiagramTemplate(button.dataset.template);
+  });
+  renderTemplateLibrary();
+}
+
+function renderTemplateLibrary() {
+  const search = document.getElementById("templateSearch");
+  const categoryFilter = document.getElementById("templateCategoryFilter");
+  const list = document.getElementById("templateMenuList");
+  const empty = document.getElementById("templateMenuEmpty");
+  const summary = document.getElementById("templateMenuSummary");
+  const query = search.value.trim().toLocaleLowerCase();
+  const selectedCategory = categoryFilter.value;
+  const categoryNames = new Map(TEMPLATE_CATEGORIES.map(category => [category.id, category.name]));
+  const matchingTemplates = templates.filter(template => {
+    if (selectedCategory !== "all" && template.category !== selectedCategory) return false;
+    if (!query) return true;
+    const searchableText = [
+      template.name,
+      template.description,
+      categoryNames.get(template.category),
+      template.diagramType,
+      ...template.tags
+    ].join(" ").toLocaleLowerCase();
+    return searchableText.includes(query);
+  });
+
+  const fragment = document.createDocumentFragment();
+  TEMPLATE_CATEGORIES.forEach(category => {
+    const categoryTemplates = matchingTemplates
+      .filter(template => template.category === category.id)
+      .sort((first, second) => first.order - second.order || first.name.localeCompare(second.name));
+    if (!categoryTemplates.length) return;
+
+    const section = document.createElement("section");
+    section.className = "template-category";
+    const heading = document.createElement("div");
+    heading.className = "template-category-heading";
+    const title = document.createElement("h3");
+    title.textContent = category.name;
+    const count = document.createElement("span");
+    count.textContent = String(categoryTemplates.length);
+    count.setAttribute("aria-label", `${categoryTemplates.length} templates`);
+    heading.append(title, count);
+    section.append(heading);
+
+    categoryTemplates.forEach(template => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "template-option";
+      button.dataset.template = template.id;
+      button.dataset.diagramType = template.diagramType;
+      button.setAttribute("aria-label", `${template.name}: ${template.description}`);
+
+      const name = document.createElement("strong");
+      name.textContent = template.name;
+      const description = document.createElement("small");
+      description.textContent = template.description;
+      const type = document.createElement("span");
+      type.className = "template-type";
+      type.textContent = template.diagramType;
+      button.append(name, description, type);
+      section.append(button);
+    });
+    fragment.append(section);
+  });
+
+  list.replaceChildren(fragment);
+  empty.hidden = matchingTemplates.length > 0;
+  summary.textContent = `${matchingTemplates.length} of ${templates.length} templates`;
 }
 
 function openModal(modal, initialFocus, returnFocus = document.activeElement) {
