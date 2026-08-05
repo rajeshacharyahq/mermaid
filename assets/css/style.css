@@ -246,22 +246,24 @@ h1, h2, p { margin: 0; }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing-shapes { cursor: row-resize; user-select: none; }
 
-.diagram-preview { flex: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; padding: 28px; background-color: #f8fafc; background-image: radial-gradient(#d8deea 1px, transparent 1px); background-size: 20px 20px; cursor: grab; touch-action: none; user-select: none; transition: background-color .2s, background-image .2s; }
-.diagram-preview.dark-preview { background-color: #09111f; background-image: radial-gradient(#293750 1px, transparent 1px); }
+.diagram-preview { --diagram-node-shadow: drop-shadow(0 1px 1px rgba(15,23,42,.12)) drop-shadow(0 5px 7px rgba(15,23,42,.16)); --diagram-node-shadow-hover: drop-shadow(0 2px 2px rgba(15,23,42,.13)) drop-shadow(0 8px 11px rgba(15,23,42,.2)); --diagram-subgraph-shadow: drop-shadow(0 2px 3px rgba(15,23,42,.09)) drop-shadow(0 9px 15px rgba(15,23,42,.13)); flex: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; padding: 28px; background-color: #f8fafc; background-image: radial-gradient(#d8deea 1px, transparent 1px); background-size: 20px 20px; cursor: grab; touch-action: none; user-select: none; transition: background-color .2s, background-image .2s; }
+.diagram-preview.dark-preview { --diagram-node-shadow: drop-shadow(0 0 1px rgba(148,163,184,.2)) drop-shadow(0 6px 9px rgba(0,0,0,.52)); --diagram-node-shadow-hover: drop-shadow(0 0 1px rgba(167,139,250,.28)) drop-shadow(0 9px 14px rgba(0,0,0,.6)); --diagram-subgraph-shadow: drop-shadow(0 0 1px rgba(148,163,184,.14)) drop-shadow(0 10px 17px rgba(0,0,0,.46)); background-color: #09111f; background-image: radial-gradient(#293750 1px, transparent 1px); }
 .diagram-preview.panning { cursor: grabbing; }
 .diagram-preview.pinching { cursor: zoom-in; }
 .diagram-preview svg { max-width: 100%; height: auto; will-change: transform; }
 .diagram-preview .node, .diagram-preview .editable-node { cursor: pointer; }
+.diagram-preview .node > :first-child, .diagram-preview .editable-node > :first-child { filter: var(--diagram-node-shadow); transition: filter .18s ease; }
+.diagram-preview g.cluster > rect { filter: var(--diagram-subgraph-shadow); transition: filter .18s ease; }
 .diagram-preview .editable-node { cursor: grab; }
 .diagram-preview .editable-node.node-dragging { opacity: .45; cursor: grabbing; }
 .diagram-preview g.cluster.node-drop-target > rect { stroke: #00aeea !important; stroke-width: 4px !important; stroke-dasharray: 7 4; }
-.diagram-preview .editable-node.node-group-target > :first-child { stroke: #00bf63 !important; stroke-width: 4px !important; filter: drop-shadow(0 0 5px rgba(0,191,99,.65)); }
+.diagram-preview .editable-node.node-group-target > :first-child { stroke: #00bf63 !important; stroke-width: 4px !important; filter: var(--diagram-node-shadow) drop-shadow(0 0 5px rgba(0,191,99,.65)); }
 .node-drag-ghost { position: fixed; z-index: 90; pointer-events: none; padding: 7px 10px; border: 1px solid #00aeea; border-radius: 8px; background: rgba(15,25,42,.92); color: white; box-shadow: 0 8px 24px rgba(0,0,0,.35); font-size: 12px; transform: translate(12px, 12px); }
 .shape-drag-preview { display: grid; width: 48px; height: 44px; place-items: center; pointer-events: none; }
 .shape-drag-preview > .shape-thumbnail { width: 32px; height: 30px; overflow: visible; filter: drop-shadow(0 4px 5px rgba(0,0,0,.28)); transform: scale(1.25); }
 .native-shape-drag-preview { position: fixed; z-index: -1; top: -100px; left: -100px; }
 .shape-drag-ghost { z-index: 100; padding: 0; border: 0; background: transparent; box-shadow: none; color: transparent; }
-.diagram-preview .node:hover > :first-child, .diagram-preview .editable-node:hover > :first-child { filter: brightness(.95); stroke-width: 2.5px !important; }
+.diagram-preview .node:hover > :first-child, .diagram-preview .editable-node:hover > :first-child { filter: brightness(.985) var(--diagram-node-shadow-hover); stroke-width: 2.5px !important; }
 .diagram-preview .editable-node:focus { outline: 3px solid #12aee8; outline-offset: 4px; }
 .diagram-preview .editable-edge { cursor: pointer; pointer-events: stroke; transition: stroke .15s, filter .15s; }
 .diagram-preview .edge-hit-area { fill: none; stroke: transparent; stroke-width: 18px; pointer-events: stroke; cursor: pointer; }
@@ -278,8 +280,8 @@ body.resizing-shapes { cursor: row-resize; user-select: none; }
 .edge-creation-mode button { padding: 6px 9px; font-size: 10px; }
 .diagram-preview.edge-creation-active .editable-node,
 .diagram-preview.edge-creation-active g.cluster { cursor: crosshair; }
-.diagram-preview .edge-creation-source > :first-child { stroke: #f59e0b !important; stroke-width: 4px !important; filter: drop-shadow(0 0 5px rgba(245,158,11,.75)); }
-.diagram-preview g.cluster.edge-creation-source > rect { stroke: #f59e0b !important; stroke-width: 4px !important; filter: drop-shadow(0 0 5px rgba(245,158,11,.6)); }
+.diagram-preview .edge-creation-source > :first-child { stroke: #f59e0b !important; stroke-width: 4px !important; filter: var(--diagram-node-shadow) drop-shadow(0 0 5px rgba(245,158,11,.75)); }
+.diagram-preview g.cluster.edge-creation-source > rect { stroke: #f59e0b !important; stroke-width: 4px !important; filter: var(--diagram-subgraph-shadow) drop-shadow(0 0 5px rgba(245,158,11,.6)); }
 .view-controls { position: absolute; z-index: 10; left: 14px; bottom: 14px; display: flex; align-items: center; max-width: calc(100% - 28px); gap: 8px; overflow-x: auto; padding: 3px; border-radius: 13px; background: rgba(18, 19, 25, .76); box-shadow: 0 10px 30px rgba(0, 0, 0, .2); backdrop-filter: blur(8px); }
 .mobile-view-controls-button { display: none; }
 .control-group { display: flex; flex: 0 0 auto; overflow: hidden; border: 1px solid #383943; border-radius: 9px; box-shadow: 0 5px 15px rgba(0, 0, 0, .2); }
@@ -463,7 +465,7 @@ body.resizing-shapes { cursor: row-resize; user-select: none; }
 .subgraph-popup .color-palette { grid-template-columns: repeat(9, 40px); }
 .diagram-preview .cluster-label { cursor: text; }
 .diagram-preview .cluster-label:hover { filter: drop-shadow(0 0 3px rgba(10,174,240,.75)); }
-.diagram-preview g.cluster.subgraph-selected > rect { stroke: #0aaef0 !important; stroke-width: 3px !important; filter: drop-shadow(0 0 3px rgba(10,174,240,.45)); }
+.diagram-preview g.cluster.subgraph-selected > rect { stroke: #0aaef0 !important; stroke-width: 3px !important; filter: var(--diagram-subgraph-shadow) drop-shadow(0 0 4px rgba(10,174,240,.45)); }
 .diagram-preview g.cluster.subgraph-dragging { opacity: .45; }
 .modal-backdrop { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(3, 7, 14, .72); backdrop-filter: blur(4px); }
 .modal-backdrop[hidden] { display: none; }
