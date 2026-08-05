@@ -505,7 +505,7 @@ function normalizeSubgraphTitle(value) {
 }
 
 function showQuickAddForSubgraph(cluster) {
-  if (pendingEdgeSource) return;
+  if (pendingEdgeSource || (quickAddSource && !elements.quickAdd.hidden)) return;
   clearTimeout(quickAddHideTimer);
   const subgraphId = getSubgraphId(cluster);
   if (!subgraphId) return;
@@ -1006,7 +1006,7 @@ function showQuickAddButton(nodeElement) {
 
 function scheduleQuickAddHide() {
   clearTimeout(quickAddHideTimer);
-  quickAddHideTimer = setTimeout(hideQuickAddButton, 320);
+  quickAddHideTimer = setTimeout(hideQuickAddButton, 500);
 }
 
 function hideQuickAddButton() {
@@ -1017,7 +1017,7 @@ function hideQuickAddButton() {
 }
 
 function getQuickAddButtonSize() {
-  return window.matchMedia("(pointer: coarse)").matches ? 44 : 34;
+  return window.matchMedia("(pointer: coarse)").matches ? 44 : 40;
 }
 
 function createConnectedNode(event) {

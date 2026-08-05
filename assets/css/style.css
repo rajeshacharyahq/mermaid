@@ -577,8 +577,9 @@ body.resizing-shapes { cursor: row-resize; user-select: none; }
 }
 
 .toast { position: fixed; z-index: 30; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 10px 15px; border: 1px solid #3d4b63; border-radius: 9px; background: #172135; box-shadow: var(--shadow); color: var(--text); font-size: 13px; }
-.quick-add { position: fixed; z-index: 18; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 2px solid white; border-radius: 50%; background: #17181c; color: white; box-shadow: 0 4px 13px rgba(0, 0, 0, .38); }
-.quick-add svg { display: block; width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.quick-add { position: fixed; z-index: 18; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 2px solid white; border-radius: 50%; background: #17181c; color: white; box-shadow: 0 4px 13px rgba(0, 0, 0, .38); }
+.quick-add::before { content: ""; position: absolute; top: -7px; right: -7px; bottom: -7px; left: -12px; border-radius: 999px; background: rgba(0, 0, 0, .001); }
+.quick-add svg { position: relative; z-index: 1; display: block; width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .quick-add:hover { background: #12aee8; border-color: white; transform: scale(1.08); }
 .quick-add[hidden] { display: none; }
 
