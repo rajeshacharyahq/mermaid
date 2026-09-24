@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Subgraph connection regression</title>
+<pre id="results">Running…</pre>
+<div id="preview"></div>
+<script src="../vendor/mermaid.min.js"></script>
+<script src="../vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js"></script>
+<script>
+(async () => {
+  const results = document.getElementById("results");
+  const preview = document.getElementById("preview");
+  const reports = [];
+  mermaid.registerLayoutLoaders(mermaidElkLayouts.default);
+  const body = 'subgraph sg1["Subgraph"]\ndirection TB\nn1["New node1"]\nn3["New node2"]\nn1 --> n3\nend\nn2@{ shape: rect, label: "Process" }';
+  const cases = [
+    ["outgoing", body + '\nn3 --> n2', "n3", "n2"],
+    ["incoming", body + '\nn2 --> n3', "n2", "n3"],
+    ["nested", 'subgraph outer["Outer"]\n' + body + '\nn3 --> n2\nend', "n3", "n2"],
+    ["isolated", body, "n1", "n3"]
+  ];
+  function endpointDistance(path, node, end) {
+    const point = path.getPointAtLength(end ? path.getTotalLength() : 0);
+    const screen = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM());
+    const local = screen.matrixTransform(node.getScreenCTM().inverse());
+    const box = node.getBBox();
+    return Math.min(
+      ...[box.x, box.x + box.width].map(x => Math.hypot(local.x - x, Math.max(box.y - local.y, 0, local.y - box.y - box.height))),
+      ...[box.y, box.y + box.height].map(y => Math.hypot(local.y - y, Math.max(box.x - local.x, 0, local.x - box.x - box.width)))
+    );
+  }
+  for (const layout of ["dagre", "elk"]) {
+    mermaid.initialize({ startOnLoad: false, layout, flowchart: { htmlLabels: false } });
+    for (const [name, code, source, target] of cases) {
+      try {
+        const { svg } = await mermaid.render(`test-${layout}-${name}`, 'flowchart TD\n' + code);
+        preview.innerHTML = svg;
+        const path = preview.querySelector(`path[id*="L_${source}_${target}_"]`);
+        const from = preview.querySelector(`g.node[id*="flowchart-${source}-"]`);
+        const to = preview.querySelector(`g.node[id*="flowchart-${target}-"]`);
+        if (!path || !from || !to) throw new Error("Missing edge or endpoint");
+        // Arrow markers account for a small gap at the target boundary.
+        if (endpointDistance(path, from, false) > 1 || endpointDistance(path, to, true) > 10) {
+          throw new Error("Edge does not reach its node boundaries");
+        }
+        reports.push(`PASS ${layout}: ${name}`);
+      } catch (error) {
+        reports.push(`FAIL ${layout}: ${name}: ${error.message}`);
+      }
+    }
+  }
+  results.textContent = reports.join('\n');
+})();
+</script>
