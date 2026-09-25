@@ -1,0 +1,78 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Compact architecture regression</title>
+<pre id="results">Running…</pre>
+<div id="preview" style="width:1400px"></div>
+<script src="../vendor/mermaid.min.js"></script>
+<script src="../vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js"></script>
+<script src="../assets/js/compact-layout.js"></script>
+<script src="compact-architecture-fixture.js"></script>
+<script>
+(async () => {
+  const elk = mermaidElkLayouts.default.find(layout => layout.name === 'elk');
+  mermaid.registerLayoutLoaders([createCompactLayoutLoader(elk), {
+    name: 'grid-only', algorithm: elk.algorithm,
+    loader: async () => {
+      const renderer = await elk.loader();
+      return { render: (data, svg, helpers, options) => renderer.render(data, svg, helpers, {
+        ...options, prepareGraph: graph => {
+          const restore = prepareCompactElkGraph(graph);
+          const reset = node => {
+            delete node.layoutOptions?.['elk.layered.nodePlacement.strategy'];
+            delete node.layoutOptions?.['elk.layered.compaction.postCompaction.strategy'];
+            (node.children || []).forEach(reset);
+          };
+          reset(graph);
+          return restore;
+        }
+      }) };
+    }
+  }]);
+  async function render(layout) {
+    mermaid.initialize({startOnLoad:false,layout,flowchart:{htmlLabels:false}});
+    preview.innerHTML = (await mermaid.render('architecture', COMPACT_ARCHITECTURE_FIXTURE)).svg;
+    const box = preview.querySelector('svg').viewBox.baseVal;
+    const edges = [...preview.querySelectorAll('path.flowchart-link')];
+    return { area: box.width * box.height, routes: edges.reduce((sum, path) => sum + path.getTotalLength(), 0), edgeIds: edges.map(edge => edge.id).sort().join(), nodeIds: [...preview.querySelectorAll('g.node')].map(node => node.id).sort().join() };
+  }
+  const before = await render('grid-only');
+  const after = await render('elk.compact');
+  if (after.area > before.area * 0.9) throw new Error('Insufficient overall compaction');
+  if (after.routes > before.routes) throw new Error('Total connecting routes increased');
+  if (after.edgeIds !== before.edgeIds || after.nodeIds !== before.nodeIds) throw new Error('Graph membership changed');
+  const groups = [...preview.querySelectorAll('g.cluster')];
+  // Checking only IDs and bounding area misses routes that double back through
+  // their own endpoint group after post-compaction. Test actual path geometry.
+  const titles = new Map([...COMPACT_ARCHITECTURE_FIXTURE.matchAll(/subgraph (\w+)\["([^"]*)"\]/g)].map(match => [match[1], match[2]]));
+  const groupBounds = new Map();
+  for (const [id, title] of titles) {
+    const matches = groups.filter(group => group.querySelector('.cluster-label').textContent === title);
+    if (matches.length === 1) groupBounds.set(id, matches[0].querySelector('rect').getBoundingClientRect());
+  }
+  const unnamed = groups.filter(group => group.querySelector('.cluster-label').textContent === '-').sort((a,b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  ['sg2', 'sg3'].forEach((id,index) => groupBounds.set(id, unnamed[index].querySelector('rect').getBoundingClientRect()));
+  for (const path of preview.querySelectorAll('path.flowchart-link')) {
+    const endpoints = path.id.match(/L_(sg\d+|n\d+)_(sg\d+|n\d+)_\d+$/);
+    if (!endpoints) throw new Error('Unexpected edge identity');
+    for (const id of endpoints.slice(1)) {
+      const box = groupBounds.get(id);
+      if (!box) continue;
+      for (let distance = 8; distance < path.getTotalLength() - 8; distance += 4) {
+        const point = path.getPointAtLength(distance).matrixTransform(path.getScreenCTM());
+        if (point.x > box.left + 2 && point.x < box.right - 2 && point.y > box.top + 2 && point.y < box.bottom - 2) throw new Error(`${path.id} crosses inside endpoint group ${id}`);
+      }
+    }
+  }
+  const rect = title => groups.find(group => group.querySelector('.cluster-label').textContent === title).querySelector('rect').getBoundingClientRect();
+  for (const [parentTitle, childTitle] of [
+    ['BackOffice System','Backoffice SQL server'],
+    ['BackOffice System','Backoffice Frontend Application Stack'],
+    ['Payment system','Web API Server'],
+    ['Payment system','Database Server']
+  ]) {
+    const parent = rect(parentTitle), child = rect(childTitle);
+    if (child.left < parent.left || child.right > parent.right || child.top < parent.top || child.bottom > parent.bottom) throw new Error('Nested subgraph escapes its parent');
+  }
+  results.textContent = `PASS area reduced ${Math.round((1-after.area/before.area)*100)}%\nPASS route length reduced ${Math.round((1-after.routes/before.routes)*100)}%\nPASS all nodes and connections retained\nPASS nested subgraphs contained\nPASS group arrows stay outside their endpoint groups`;
+})().catch(error => results.textContent = 'FAIL ' + error.stack);
+</script>

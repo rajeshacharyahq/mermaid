@@ -1,0 +1,124 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Arrow label mapping regression</title>
+<pre id="results">Running…</pre>
+<div id="preview"></div>
+<select id="edgeStyle"><option value="solid">solid</option></select>
+<select id="edgeStartStyle"><option value="none">none</option></select>
+<select id="edgeEndStyle"><option value="arrow">arrow</option></select>
+<script src="../vendor/mermaid.min.js"></script>
+<script src="../vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js"></script>
+<script>
+const elements = {
+  preview: document.getElementById('preview'), editor: { value: '' },
+  edgeColor: { dataset: {} }, edgeThickness: { value: '2' }
+};
+let parsedEdgeCacheCode = null, parsedEdgeCache = [];
+</script>
+<script src="../assets/js/diagram.js"></script>
+<script>
+(async () => {
+  const reports = [];
+  mermaid.registerLayoutLoaders(mermaidElkLayouts.default);
+  const cases = [
+    ['subgraph', 'flowchart TD\nsubgraph sg\ndirection TB\na -->|inside| b\nend\nx -->|outside| y'],
+    ['repeated', 'flowchart TD\na -->|first| b\na -->|second| b\nb -->|return| a'],
+    ['chain', 'flowchart TD\na -->|first| b -->|second| c'],
+    ['customer-diagram', `flowchart TD
+    n1@{ shape: rect, label: "User/ Customer 5paisa mobile and web platform" }
+    n1
+    n3@{ shape: rect, label: "App Load Balancer" }
+    n3
+    n4@{ shape: rect, label: "Azure AKS" }
+    n3 --> n4
+    subgraph sg1["Onboarding Journey"]
+        direction TB
+        subgraph sg2["-"]
+            direction TB
+            n6@{ shape: rect, label: "Mobile Verification" }
+            n7@{ shape: rect, label: "Email Verification" }
+            n8@{ shape: rect, label: "PAN Verification" }
+            n9@{ shape: rect, label: "Address Verification" }
+            n10@{ shape: rect, label: "Bank Verficiation" }
+        end
+        subgraph sg3["-"]
+            direction TB
+            n11@{ shape: rect, label: "Selfie Upload" }
+            n12@{ shape: rect, label: "Document Upload" }
+            n13@{ shape: rect, label: "Signature Upload" }
+        end
+        n14@{ shape: rect, label: "Activation / Esign" }
+    end
+    n4 --> sg1
+    n6
+    sg2 -->|asd fasdf asdfdaf| sg3
+    sg3 -->|a fsasdfasdf| n14
+    n15@{ shape: rect, label: "Backend OMS/ RMS" }
+    sg1 --> n15
+    n16@{ shape: rect, label: "Application Gateway" }
+    n16
+    n16 <--> n1
+    subgraph sg4["Communication Services"]
+        direction TB
+        n17@{ shape: rect, label: "Email" }
+        n18@{ shape: rect, label: "SMS" }
+        n19@{ shape: rect, label: "Notification" }
+    end
+    sg1 --> sg4
+    subgraph sg5["Payment system"]
+        direction TB
+        subgraph sg6["Web API Server"]
+            direction TB
+            n21@{ shape: rect, label: "Virtual Machine 1" }
+            n23@{ shape: rect, label: "Virtual Machine 2" }
+            n21 --> n23
+        end
+        subgraph sg7["Database Server"]
+            direction TB
+            n22@{ shape: rect, label: "Primary Database" }
+            n25@{ shape: rect, label: "Secondary Database" }
+        end
+    end
+    n21
+    sg7 <--> sg6
+    n23
+    n24@{ shape: rect, label: "WAF" }
+    sg6 -->|8. Success or Failure Response| n24
+    n1 --> n24
+    n1 --> n3
+    n16 --> sg6
+    n24 --> sg6`]
+  ];
+  for (const layout of ['dagre', 'elk']) {
+    mermaid.initialize({ startOnLoad: false, layout, flowchart: { htmlLabels: false } });
+    for (const [name, code] of cases) {
+      try {
+        elements.editor.value = code;
+        const { svg } = await mermaid.render(`test-${layout}-${name}`, code);
+        elements.preview.innerHTML = svg;
+        // Also force a different path order to make source-order assumptions fail.
+        const paths = [...elements.preview.querySelectorAll('path.flowchart-link')];
+        paths.forEach(path => path.parentNode.prepend(path));
+        bindRenderedEdges();
+        const edges = parseEdges();
+        if (paths.length !== edges.length) throw new Error('Unexpected path count');
+        for (const path of paths) {
+          const edge = edges[Number(path.dataset.edgeIndex)];
+          if (!edge || !path.id.includes(`L_${edge.source}_${edge.target}_`)) throw new Error('Wrong edge mapping: ' + path.id);
+          const labelId = path.id;
+          const label = [...elements.preview.querySelectorAll('[data-id]')].find(el => el.getAttribute('data-id') === labelId);
+          if (label && !label.textContent.includes(edge.label)) throw new Error('Wrong label');
+          if (edge.label) {
+            const updated = buildUpdatedEdgeCode(edge, 'edited');
+            const expected = code.replace(`|${edge.label}|`, '|edited|');
+            if (updated !== expected) throw new Error('Edited the wrong source label');
+          }
+        }
+        if (new Set(paths.map(path => path.dataset.edgeIndex)).size !== edges.length) throw new Error('Duplicate mapping');
+        reports.push(`PASS ${layout}: ${name}`);
+      } catch (error) { reports.push(`FAIL ${layout}: ${name}: ${error.message}`); }
+    }
+  }
+  document.getElementById('results').textContent = reports.join('\n');
+})();
+</script>

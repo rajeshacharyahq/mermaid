@@ -31,7 +31,7 @@ function getAdaptiveRenderDelay(code) {
   return RENDER_DELAY;
 }
 
-async function renderDiagram() {
+async function renderDiagram(options = {}) {
   clearTimeout(renderTimer);
   const renderStartedAt = performance.now();
   const code = elements.editor.value.trim();
@@ -58,12 +58,15 @@ async function renderDiagram() {
     const renderId = `mermaid-render-${Date.now()}-${requestId}`;
     const result = await mermaid.render(renderId, code);
     if (requestId !== renderSequence) return;
+    const previousView = options.fitView ? null : capturePreviewView();
     elements.preview.innerHTML = typeof result === "string" ? result : result.svg;
     if (result && typeof result.bindFunctions === "function") result.bindFunctions(elements.preview);
     bindRenderedNodes();
+    normalizeArrowEndpointTails(elements.preview.querySelector("svg"));
+    addArrowCrossingJumps(elements.preview.querySelector("svg"));
     bindRenderedEdges();
     updateEdgeCreationMode();
-    finalizeRenderedPreview(requestId);
+    finalizeRenderedPreview(requestId, previousView);
     hideError();
     setStatus("Rendered", "success");
     const elapsed = Math.round(performance.now() - renderStartedAt);
@@ -368,7 +371,7 @@ function importCode(event) {
     captureCurrentSnapshot(`Before importing ${file.name}`);
     elements.diagramName.value = file.name.replace(/\.mmd$/i, "") || "Untitled Diagram";
     updateDocumentTitle();
-    setEditorCode(String(reader.result));
+    setEditorCode(String(reader.result), { fitView: true });
     showToast(`${file.name} imported.`);
   };
   reader.onerror = () => showError("The selected file could not be read.");

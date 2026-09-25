@@ -294,7 +294,7 @@ function loadActiveDiagramIntoEditor() {
   updateDiagramLibraryCount();
   hideError();
   initializeMermaid();
-  renderDiagram();
+  renderDiagram({ fitView: true });
   const status = document.getElementById("autosaveStatus");
   status.textContent = "Saved locally";
   status.className = "autosave-status";
@@ -598,6 +598,14 @@ function prepareSvgForExport(svg, scale, padding, background, transparent) {
   clone.querySelectorAll(".node-link-action").forEach(node => node.remove());
   clone.querySelectorAll(".edge-hover, .edge-selected").forEach(node => node.classList.remove("edge-hover", "edge-selected"));
   clone.querySelectorAll("[tabindex]").forEach(node => node.removeAttribute("tabindex"));
+  // Preserve the preview's opaque arrow-label backgrounds outside the page CSS.
+  const labelBackgrounds = svg.querySelectorAll(".edgeLabel rect.background");
+  clone.querySelectorAll(".edgeLabel rect.background").forEach((rect, index) => {
+    const style = getComputedStyle(labelBackgrounds[index]);
+    ["fill", "fill-opacity", "opacity", "stroke", "stroke-opacity", "stroke-width", "stroke-linejoin"].forEach(property => {
+      rect.style.setProperty(property, style.getPropertyValue(property), "important");
+    });
+  });
   replaceForeignObjectLabels(clone, svg);
   removeExternalSvgResources(clone);
   clone.style.removeProperty("transform");

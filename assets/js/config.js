@@ -5,11 +5,11 @@
 // -----------------------------------------------------------------------------
 
 const DEFAULT_LAYOUT_ENGINE = "elk";
-const DIAGRAM_LAYOUT_ENGINES = new Set(["elk", "dagre"]);
+const DIAGRAM_LAYOUT_ENGINES = new Set(["elk", "dagre", "elk.compact"]);
 
 function getEmbeddedDiagramLayout(code) {
   const frontmatter = String(code || "").match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
-  const layout = frontmatter?.[1].match(/^[ \t]*layout[ \t]*:[ \t]*(elk|dagre)[ \t]*$/im)?.[1].toLowerCase();
+  const layout = frontmatter?.[1].match(/^[ \t]*layout[ \t]*:[ \t]*(elk\.compact|elk|dagre)[ \t]*$/im)?.[1].toLowerCase();
   return DIAGRAM_LAYOUT_ENGINES.has(layout) ? layout : null;
 }
 

@@ -16,7 +16,7 @@ function setEditorCode(code, options = {}) {
   updateLayoutEngineButton();
   if (layoutChanged && window.mermaid) initializeMermaid();
   scheduleAutoSave();
-  renderDiagram();
+  renderDiagram({ fitView: options.fitView === true });
 }
 
 function getDiagramName() {
@@ -355,7 +355,7 @@ function setDiagramLayout(layout) {
     activeDiagram.layoutInCode = true;
   }
   if (isCompactMobileLayout()) closeMobileViewControls();
-  showToast(`${layout === "elk" ? "Adaptive" : "Hierarchical"} layout applied.`);
+  showToast(`${layout === "elk.compact" ? "Compact" : layout === "elk" ? "Adaptive" : "Hierarchical"} layout applied.`);
 }
 
 function toggleDirectionMenu(event) {
@@ -401,7 +401,7 @@ function positionDirectionMenu() {
 
 function updateLayoutEngineButton() {
   const layout = activeLayoutEngine;
-  const layoutName = layout === "elk" ? "Adaptive" : "Hierarchical";
+  const layoutName = layout === "elk.compact" ? "Compact" : layout === "elk" ? "Adaptive" : "Hierarchical";
   if (!elements.layoutEngineButton) return;
   elements.layoutEngineButton.dataset.layoutEngine = layout;
   elements.layoutEngineButton.setAttribute("aria-label", `Choose diagram layout. Current layout: ${layoutName}`);
@@ -528,16 +528,38 @@ function fitDiagramToWindow(options = {}) {
   centerView({ behavior });
 }
 
-function finalizeRenderedPreview(requestId) {
-  cancelAnimationFrame(pendingFitFrame);
+function capturePreviewView() {
+  const svg = elements.preview.querySelector("svg");
+  const matrix = svg?.getScreenCTM();
+  if (!matrix) return null;
+  const rect = elements.preview.getBoundingClientRect();
+  const screen = new DOMPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  return { zoom, panX, panY, point: screen.matrixTransform(matrix.inverse()), screen };
+}
 
-  // Fit immediately to avoid showing the new SVG at the previous view state.
-  fitDiagramToWindow({ behavior: "auto" });
+function restorePreviewView(view) {
+  zoom = view.zoom;
+  panX = view.panX;
+  panY = view.panY;
+  applyZoom();
+  const matrix = elements.preview.querySelector("svg")?.getScreenCTM();
+  if (!matrix) return;
+  const current = view.point.matrixTransform(matrix);
+  panX += view.screen.x - current.x;
+  panY += view.screen.y - current.y;
+  applyZoom();
+}
+
+function finalizeRenderedPreview(requestId, previousView = null) {
+  cancelAnimationFrame(pendingFitFrame);
+  if (previousView) restorePreviewView(previousView);
+  else fitDiagramToWindow({ behavior: "auto" });
 
   // Confirm the fit after the browser has applied the SVG's final layout.
   pendingFitFrame = requestAnimationFrame(() => {
     if (requestId !== renderSequence) return;
-    fitDiagramToWindow({ behavior: "auto" });
+    // Editing must not reset zoom/pan. Initial loads still auto-fit.
+    if (!previousView) fitDiagramToWindow({ behavior: "auto" });
     openPendingNodePopup();
     openPendingEdgePopup();
   });

@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Compact layout regression</title>
+<pre id="results">Running…</pre>
+<div id="preview" style="width:2000px"></div>
+<script src="../vendor/mermaid.min.js"></script>
+<script src="../vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js"></script>
+<script src="../assets/js/compact-layout.js"></script>
+<script>
+(async () => {
+  const reports = [];
+  const layouts = mermaidElkLayouts.default;
+  mermaid.registerLayoutLoaders([...layouts, createCompactLayoutLoader(layouts.find(layout => layout.name === 'elk'))]);
+  const body = `flowchart TD
+start --> onboarding
+subgraph onboarding["Onboarding Journey"]
+direction TB
+subgraph checks["Verification"]
+direction TB
+a["PAN Verification"]
+b["Bank Verification"]
+c["Email Verification"]
+d["Mobile Verification"]
+e["Address Verification"]
+end
+subgraph uploads["Uploads"]
+direction TB
+f["Selfie Upload"]
+g["Signature Upload"]
+h["Document Upload"]
+end
+checks --> uploads --> activation["Activation / Esign"]
+end
+onboarding --> finish`;
+  async function render(layout, code) {
+    mermaid.initialize({startOnLoad:false,layout,flowchart:{htmlLabels:false}});
+    preview.innerHTML = (await mermaid.render('test', code)).svg;
+    const group = [...preview.querySelectorAll('.cluster')].find(group => group.textContent === 'Verification');
+    if (layout === 'elk.compact') {
+      const parent = group.querySelector('rect').getBoundingClientRect();
+      for (const id of ['a', 'b', 'c', 'd', 'e']) {
+        const child = preview.querySelector(`[id*="flowchart-${id}-"]`).getBoundingClientRect();
+        if (child.left < parent.left || child.right > parent.right || child.top < parent.top || child.bottom > parent.bottom) throw new Error('Packed child outside group');
+      }
+    }
+    return { height: group.querySelector('rect').getBBox().height, width: group.querySelector('rect').getBBox().width, nodes: preview.querySelectorAll('.node').length, edges: preview.querySelectorAll('.flowchart-link').length };
+  }
+  const normal = await render('elk', body);
+  const compact = await render('elk.compact', body);
+  if (compact.height >= normal.height * 0.8) throw new Error(`Not compact: ${normal.height} -> ${compact.height}`);
+  reports.push(`PASS independent stack reduced from ${normal.height}px to ${compact.height}px`);
+  if (normal.nodes !== compact.nodes || normal.edges !== compact.edges) throw new Error('Graph changed');
+  reports.push('PASS all nodes and connections retained');
+  const connectedCode = body.replace('e["Address Verification"]', 'e["Address Verification"]\na --> b --> c --> d --> e');
+  const chainNormal = await render('elk', connectedCode);
+  const chainCompact = await render('elk.compact', connectedCode);
+  if (chainNormal.height !== chainCompact.height) throw new Error('Connected sequence repacked');
+  reports.push('PASS connected sequence preserved');
+  const restored = await render('elk', body);
+  if (restored.height !== normal.height) throw new Error('Adaptive did not restore layout');
+  reports.push('PASS Adaptive layout restored');
+  document.getElementById('results').textContent = reports.join('\n');
+})().catch(error => document.getElementById('results').textContent = 'FAIL ' + error.stack);
+</script>

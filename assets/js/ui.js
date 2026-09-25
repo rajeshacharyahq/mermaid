@@ -35,6 +35,7 @@ function initializeApp() {
     return;
   }
   mermaid.registerLayoutLoaders(elkLayouts);
+  mermaid.registerLayoutLoaders([createCompactLayoutLoader(elkLayouts.find(layout => layout.name === "elk"))]);
 
   initializeMermaid();
   updatePreviewThemeUI();
@@ -243,6 +244,7 @@ function bindEvents() {
     if (!event.target.closest("#diagramThemeMenu, #diagramThemeButton")) closeDiagramThemeMenu();
   });
   createDiagramThemeOptions();
+  createNodeThemePalette();
   createColorPalette("textPalette", elements.textColor, "text");
   createColorPalette("fillPalette", elements.fillColor, "fill");
   createColorPalette("borderPalette", elements.borderColor, "border");

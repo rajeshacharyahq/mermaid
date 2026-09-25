@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Nested subgraph spacing regression</title>
+<pre id="results">Running…</pre>
+<div id="preview" style="width:2400px"></div>
+<script src="../vendor/mermaid.min.js"></script>
+<script src="../vendor/mermaid-layout-elk/mermaid-layout-elk.iife.min.js"></script>
+<script>
+(async () => {
+  mermaid.registerLayoutLoaders(mermaidElkLayouts.default);
+  const preview = document.getElementById('preview');
+  const reports = [];
+  const body = `subgraph sg8["BackOffice System"]
+direction TB
+subgraph sg9["Backoffice SQL server"]
+direction TB
+n30["Primary"]
+n31["Secondary"]
+end
+end
+n30
+subgraph sg10["BackOffice frontend application stack"]
+direction TB
+n32["Backoffice EXE"]
+n33["CD Plus"]
+n34["DMAT"]
+end`;
+  for (const direction of ['TD', 'LR']) {
+    for (const connected of [false, true]) {
+      for (const siblingsInside of [false, true]) {
+      try {
+        mermaid.initialize({ startOnLoad: false, layout: 'elk', flowchart: { htmlLabels: false } });
+        const groupsBody = siblingsInside ? body.replace('end\nend\nn30', 'end\nn30') + '\nend' : body;
+        const code = `flowchart ${direction}\n${groupsBody}` + (connected ? '\nsg10 --> sg9\nsg9 --> result[Result]' : '');
+        preview.innerHTML = (await mermaid.render(`test-${direction}-${connected}`, code)).svg;
+        const groups = [...preview.querySelectorAll('g.cluster')];
+        const get = title => groups.find(group => group.querySelector('.cluster-label').textContent === title);
+        const bounds = group => group.querySelector('rect').getBoundingClientRect();
+        const outer = bounds(get('BackOffice System'));
+        const inner = bounds(get('Backoffice SQL server'));
+        const adjacent = bounds(get('BackOffice frontend application stack'));
+        const contains = (a, b) => b.left >= a.left && b.right <= a.right && b.top >= a.top && b.bottom <= a.bottom;
+        if (!contains(outer, inner)) throw new Error('Nested box escapes its parent');
+        if (siblingsInside && !contains(outer, adjacent)) throw new Error('Frontend child escapes its parent');
+        const neighbor = siblingsInside ? inner : outer;
+        const gap = Math.max(adjacent.left - neighbor.right, neighbor.left - adjacent.right, adjacent.top - neighbor.bottom, neighbor.top - adjacent.bottom);
+        if (gap < 8) throw new Error(`Adjacent boxes overlap or have insufficient spacing: ${gap}`);
+        for (const group of groups) {
+          if (!contains(bounds(group), group.querySelector('.cluster-label').getBoundingClientRect())) throw new Error('Title escapes its box');
+        }
+        if (preview.querySelectorAll('g.node').length !== (connected ? 6 : 5)) throw new Error('Missing nodes');
+        reports.push(`PASS ${direction}, ${connected ? 'connected' : 'disconnected'}, ${siblingsInside ? 'two children' : 'adjacent outer group'}`);
+      } catch (error) {
+        reports.push(`FAIL ${direction}, ${connected}, two children=${siblingsInside}: ${error.message}`);
+      }
+      }
+    }
+  }
+  document.getElementById('results').textContent = reports.join('\n');
+})();
+</script>

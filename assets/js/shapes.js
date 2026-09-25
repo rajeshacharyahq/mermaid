@@ -360,6 +360,36 @@ function getNextSubgraphId() {
   return `sg${nextNumber}`;
 }
 
+function createNodeThemePalette() {
+  const container = document.getElementById("nodeThemePalette");
+  [null, ...STYLE_COLOR_PALETTE].forEach(theme => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = theme ? "swatch swatch-fill" : "swatch no-color";
+    button.dataset.nodeTheme = theme ? theme.name : "none";
+    button.title = theme ? `${theme.name}: fill, border, and text` : "No color: restore defaults";
+    button.setAttribute("aria-label", button.title);
+    button.setAttribute("aria-pressed", "false");
+    if (theme) {
+      button.style.setProperty("--swatch", theme.fill);
+      button.style.setProperty("--swatch-border", theme.border);
+      button.style.color = theme.text;
+      button.textContent = "Aa";
+    }
+    button.addEventListener("click", () => {
+      if (!selectedNodeId) return;
+      [[elements.fillColor, "fill"], [elements.borderColor, "border"], [elements.textColor, "text"]].forEach(([input, role]) => {
+        if (theme) input.value = theme[role];
+        input.dataset.userSelected = "true";
+        input.dataset.noColor = theme ? "false" : "true";
+      });
+      updateSelectedSwatches();
+      applyNodeVisualChangesLive();
+    });
+    container.appendChild(button);
+  });
+}
+
 function createColorPalette(containerId, colorInput, paletteRole) {
   const container = document.getElementById(containerId);
   const palette = STYLE_COLOR_PALETTE.map(theme => ({ name: theme.name, color: theme[paletteRole], border: theme.border }));

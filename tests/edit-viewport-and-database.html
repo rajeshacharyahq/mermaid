@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Edit viewport and database arrow regression</title>
+<pre id="results">Running…</pre>
+<iframe src="../index.html" width="1300" height="900"></iframe>
+<script src="compact-architecture-fixture.js"></script>
+<script>
+// Run through the real editor; file:// testing requires Chrome's
+// --allow-file-access-from-files flag, or serve the project over localhost.
+document.querySelector('iframe').onload = function () {
+  this.contentWindow.testArchitecture = COMPACT_ARCHITECTURE_FIXTURE;
+  this.contentWindow.eval(`(${async function () {
+    const reports = [];
+    const check = (ok, message) => { if (!ok) throw new Error(message); reports.push('PASS ' + message); };
+    // Allow deferred popup/fit work in a headless iframe without display frames.
+    window.requestAnimationFrame = callback => setTimeout(callback, 0);
+    window.cancelAnimationFrame = clearTimeout;
+    const settle = () => new Promise(resolve => setTimeout(resolve, 100));
+    await settle();
+    activeLayoutEngine = 'elk.compact'; initializeMermaid();
+    elements.editor.value = testArchitecture;
+    await renderDiagram({ fitView: true }); await settle();
+    check(elements.status.textContent === 'Rendered', 'diagram renders successfully');
+    for (const source of ['sg9', 'sg10']) {
+      const path = elements.preview.querySelector(`path[id*="L_${source}_n49_"]`);
+      const node = elements.preview.querySelector('[id*="flowchart-n49-"]');
+      const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(path.getScreenCTM());
+      const previous = path.getPointAtLength(path.getTotalLength() - 1).matrixTransform(path.getScreenCTM());
+      const box = node.getBoundingClientRect();
+      const dot = (end.x - previous.x) * (box.x + box.width / 2 - end.x) + (end.y - previous.y) * (box.y + box.height / 2 - end.y);
+      check(dot > 0, source + ' arrow points into database');
+    }
+    zoom = 145; panX = -170; panY = 110; applyZoom();
+    const before = capturePreviewView();
+    setEditorCode(elements.editor.value + '\nnewNode["Added node"]\nn49 --> newNode');
+    await settle(); await renderDiagram(); await settle();
+    const screen = before.point.matrixTransform(elements.preview.querySelector('svg').getScreenCTM());
+    check(zoom === 145, 'zoom retained after adding node');
+    check(Math.hypot(screen.x - before.screen.x, screen.y - before.screen.y) < 1, 'viewport centre retained after graph grows');
+    await renderDiagram(); await settle();
+    check(zoom === 145, 'manual Render retains zoom');
+    const prepared = prepareSvgForExport(elements.preview.querySelector('svg'), 1, 8, '#ffffff', false);
+    check(prepared.svg.querySelector('path[id*="L_sg9_n49_"]').getAttribute('d') === elements.preview.querySelector('path[id*="L_sg9_n49_"]').getAttribute('d'), 'export retains corrected arrow path');
+    await renderDiagram({ fitView: true }); await settle();
+    check(zoom < 145, 'new-diagram auto-fit remains available');
+    zoom = 145; applyZoom(); fitDiagramToWindow();
+    check(zoom < 145, 'Fit control still works');
+    parent.document.getElementById('results').textContent = reports.join('\n');
+  }.toString()})().catch(error => parent.document.getElementById('results').textContent = 'FAIL ' + error.stack)`);
+};
+</script>

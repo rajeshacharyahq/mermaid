@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Arrow crossing regression</title>
+<pre id="results">Running…</pre>
+<div id="preview"></div>
+<script src="../assets/js/crossings.js"></script>
+<script>
+const preview = document.getElementById('preview');
+const reports = [];
+const cases = [
+  ['perpendicular', '<path d="M20,100H220"/><path d="M120,20V180"/>', 1],
+  ['diagonal', '<path d="M20,20L220,180"/><path d="M20,180L220,20"/>', 1],
+  ['curved', '<path d="M20,90C80,110 160,90 220,110"/><path d="M120,20V180"/>', 1],
+  ['subgraph transforms', '<g transform="translate(20,0)"><path d="M0,100H200"/></g><g transform="translate(0,20)"><path d="M120,0V160"/></g>', 1],
+  ['shared endpoint', '<path d="M20,100H120"/><path d="M120,100V180"/>', 0],
+  ['parallel overlap', '<path d="M20,100H220"/><path d="M40,100H180"/>', 0],
+  ['multiple', '<path d="M20,100H220"/><path d="M80,20V180"/><path d="M160,20V180"/>', 2]
+];
+for (const [name, markup, expected] of cases) {
+  try {
+    const container = document.createElement('div');
+    container.innerHTML = `<svg id="case-${reports.length}" width="260" height="200" viewBox="0 0 260 200" xmlns="http://www.w3.org/2000/svg">${markup}</svg>`;
+    preview.append(container);
+    const svg = container.firstElementChild;
+    const paths = [...svg.querySelectorAll('path')];
+    paths.forEach(path => { path.classList.add('flowchart-link'); path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#333'); path.setAttribute('stroke-width', '2'); });
+    const endpoints = paths.map(path => [path.getPointAtLength(0), path.getPointAtLength(path.getTotalLength())]);
+    addArrowCrossingJumps(svg);
+    const jumps = paths.reduce((sum, path) => sum + Number(path.dataset.crossingJumps || 0), 0);
+    if (jumps !== expected) throw new Error(`Expected ${expected} jumps, got ${jumps}`);
+    paths.forEach((path, index) => {
+      const after = [path.getPointAtLength(0), path.getPointAtLength(path.getTotalLength())];
+      if (after.some((point, side) => Math.hypot(point.x - endpoints[index][side].x, point.y - endpoints[index][side].y) > 0.01)) throw new Error('Endpoint moved');
+      const reference = path.getAttribute('mask');
+      if (reference && !svg.querySelector(reference.slice(4, -1))) throw new Error('Mask reference missing');
+    });
+    if (expected && !svg.querySelector('mask path')) throw new Error('Missing transparent clearance');
+    const serialized = new XMLSerializer().serializeToString(svg);
+    if (expected && !serialized.includes('<mask')) throw new Error('Mask absent from SVG export');
+    reports.push(`PASS ${name}`);
+  } catch (error) { reports.push(`FAIL ${name}: ${error.message}`); }
+}
+document.getElementById('results').textContent = reports.join('\n');
+</script>

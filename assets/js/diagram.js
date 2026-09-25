@@ -525,23 +525,39 @@ function showQuickAddForSubgraph(cluster) {
 
 function bindRenderedEdges() {
   const edges = parseEdges();
+  const occurrences = new Map();
+  const renderedEdges = new Map();
+  edges.forEach(edge => {
+    const pair = `L_${edge.source}_${edge.target}`;
+    const occurrence = occurrences.get(pair) || 0;
+    occurrences.set(pair, occurrence + 1);
+    // The bundled Mermaid numbers parallel edges 0, 2, 3, ... .
+    renderedEdges.set(`${pair}_${occurrence === 0 ? 0 : occurrence + 1}`, edge);
+  });
   let paths = Array.from(elements.preview.querySelectorAll("path.flowchart-link"));
   if (!paths.length) paths = Array.from(elements.preview.querySelectorAll(".edgePath path")).filter(path => !path.closest("defs"));
-  paths.forEach((path, index) => {
-    if (!edges[index]) return;
+  paths.forEach(path => {
+    // Layout engines can reorder paths, especially across subgraphs. Match
+    // Mermaid's edge identity instead of treating SVG order as source order.
+    const renderId = path.ownerSVGElement?.id;
+    const edgeId = renderId && path.id.startsWith(`${renderId}-`) ? path.id.slice(renderId.length + 1) : path.id;
+    const edge = renderedEdges.get(edgeId);
+    if (!edge) return;
+    const index = edge.index;
     path.classList.add("editable-edge");
     path.dataset.edgeIndex = String(index);
-    normalizeEdgeEndpointMarkers(path, index, edges[index]);
+    normalizeEdgeEndpointMarkers(path, index, edge);
     const hitArea = path.cloneNode(false);
     hitArea.removeAttribute("id");
     hitArea.removeAttribute("style");
+    hitArea.removeAttribute("mask");
     hitArea.removeAttribute("marker-start");
     hitArea.removeAttribute("marker-end");
     hitArea.setAttribute("class", "edge-hit-area");
     hitArea.dataset.edgeIndex = String(index);
     hitArea.setAttribute("tabindex", "0");
     hitArea.setAttribute("role", "button");
-    hitArea.setAttribute("aria-label", `Edit arrow from ${edges[index].source} to ${edges[index].target}${edges[index].label ? `: ${edges[index].label}` : ""}`);
+    hitArea.setAttribute("aria-label", `Edit arrow from ${edge.source} to ${edge.target}${edge.label ? `: ${edge.label}` : ""}`);
     path._visibleEdgePath = path;
     hitArea._visibleEdgePath = path;
     path.parentNode.insertBefore(hitArea, path);
@@ -1513,6 +1529,15 @@ function getSelectedStyleParts(entries) {
 }
 
 function updateSelectedSwatches() {
+  document.querySelectorAll("#nodeThemePalette .swatch").forEach(button => {
+    const theme = STYLE_COLOR_PALETTE.find(item => item.name === button.dataset.nodeTheme);
+    const selected = [[elements.fillColor, "fill"], [elements.borderColor, "border"], [elements.textColor, "text"]].every(([input, role]) => {
+      const hasColor = input.dataset.userSelected === "true" && input.dataset.noColor !== "true";
+      return theme ? hasColor && input.value.toLowerCase() === theme[role].toLowerCase() : !hasColor;
+    });
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
   [["textPalette", elements.textColor], ["fillPalette", elements.fillColor], ["borderPalette", elements.borderColor], ["edgePalette", elements.edgeColor], ["subgraphTextPalette", document.getElementById("subgraphTextColor")], ["subgraphFillPalette", document.getElementById("subgraphFillColor")], ["subgraphBorderPalette", document.getElementById("subgraphBorderColor")]].forEach(([id, input]) => {
     document.querySelectorAll(`#${id} .swatch`).forEach(button => {
       const isSelected = input.dataset.userSelected === "true" && (input.dataset.noColor === "true" ? button.dataset.color === "none" : button.dataset.color.toLowerCase() === input.value.toLowerCase());
@@ -1725,14 +1750,15 @@ function getDiagramThemeNodeRole(node) {
 function mergeElementThemeStyle(lines, id, style) {
   const pattern = new RegExp(`^(\\s*style\\s+${escapeRegExp(id)}\\s+)(.*)$`, "i");
   const index = lines.findIndex(line => pattern.test(line));
-  const colors = [`fill:${style.fill}`, `color:${style.text}`, `stroke:${style.border}`];
+  const colors = style ? [`fill:${style.fill}`, `color:${style.text}`, `stroke:${style.border}`] : [];
   if (index < 0) {
-    lines.push(`style ${id} ${colors.join(",")}`);
+    if (colors.length) lines.push(`style ${id} ${colors.join(",")}`);
     return;
   }
   const match = lines[index].match(pattern);
   const retained = match[2].split(",").map(part => part.trim()).filter(part => part && !/^(?:fill|color|stroke)\s*:/i.test(part));
-  lines[index] = `${match[1]}${[...retained, ...colors].join(",")}`;
+  if (retained.length || colors.length) lines[index] = `${match[1]}${[...retained, ...colors].join(",")}`;
+  else lines.splice(index, 1);
 }
 
 function mergeEdgeThemeStyle(lines, edgeIndex, color) {
@@ -1791,7 +1817,15 @@ function applyNodeVisualChangesLive() {
 
   const styleParts = getSelectedStyleParts([["fill", elements.fillColor], ["color", elements.textColor], ["stroke", elements.borderColor]]);
   const stylePattern = new RegExp(`^\\s*style\\s+${escapeRegExp(nodeId)}\\s+.*$`, "mi");
-  if (styleParts.length) code = stylePattern.test(code) ? code.replace(stylePattern, `style ${nodeId} ${styleParts.join(",")}`) : `${code.trimEnd()}\nstyle ${nodeId} ${styleParts.join(",")}`;
+  if (panelName === "theme") {
+    const lines = elements.editor.value.split(/\r?\n/);
+    const theme = elements.fillColor.dataset.noColor === "true" ? null : {
+      fill: elements.fillColor.value, border: elements.borderColor.value, text: elements.textColor.value
+    };
+    mergeElementThemeStyle(lines, nodeId, theme);
+    code = lines.join("\n");
+  }
+  else if (styleParts.length) code = stylePattern.test(code) ? code.replace(stylePattern, `style ${nodeId} ${styleParts.join(",")}`) : `${code.trimEnd()}\nstyle ${nodeId} ${styleParts.join(",")}`;
   else code = code.replace(stylePattern, "").replace(/\n{3,}/g, "\n\n").trimEnd();
   if (code === elements.editor.value) return;
 

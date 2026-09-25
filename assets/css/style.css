@@ -267,6 +267,19 @@ body.resizing-shapes { cursor: row-resize; user-select: none; }
 .diagram-preview .editable-node:focus { outline: 3px solid #12aee8; outline-offset: 4px; }
 .diagram-preview .editable-edge { cursor: pointer; pointer-events: stroke; transition: stroke .15s, filter .15s; }
 .diagram-preview .edge-hit-area { fill: none; stroke: transparent; stroke-width: 18px; pointer-events: stroke; cursor: pointer; }
+/* Mermaid makes SVG label backgrounds translucent, letting arrows cross the text.
+   An opaque background and a small border give short and multiline labels room. */
+.diagram-preview .edgeLabel { --edge-label-background: #f8fafc; }
+.diagram-preview.dark-preview .edgeLabel { --edge-label-background: #182230; }
+.diagram-preview .edgeLabel rect.background {
+  fill: var(--edge-label-background) !important;
+  fill-opacity: 1 !important;
+  opacity: 1 !important;
+  stroke: var(--edge-label-background) !important;
+  stroke-opacity: 1 !important;
+  stroke-width: 6px !important;
+  stroke-linejoin: round;
+}
 .diagram-preview .editable-edge:hover, .diagram-preview .editable-edge.edge-hover, .diagram-preview .editable-edge.edge-selected { stroke: #0aaef0 !important; stroke-width: 4px !important; filter: drop-shadow(0 0 3px rgba(10, 174, 240, .7)); }
 .diagram-preview .edge-hit-area:focus + .editable-edge { stroke: #0aaef0 !important; stroke-width: 4px !important; filter: drop-shadow(0 0 4px rgba(10, 174, 240, .85)); }
 .edge-creation-mode { position: absolute; z-index: 16; top: 58px; left: 50%; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: min(430px, calc(100% - 28px)); padding: 9px 10px; border: 1px solid #7567f8; border-radius: 11px; background: rgba(12,19,32,.96); color: #edf1f8; box-shadow: 0 12px 32px rgba(0,0,0,.4); transform: translateX(-50%); backdrop-filter: blur(8px); }
@@ -355,7 +368,7 @@ body.resizing-shapes { cursor: row-resize; user-select: none; }
 
 .editor-backdrop { position: fixed; z-index: 65; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: rgba(3, 7, 14, .68); backdrop-filter: blur(3px); }
 .editor-backdrop[hidden] { display: none; }
-.node-popup { position: fixed; z-index: 70; width: min(510px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 14px 20px 16px; border: 1px solid #2b2d34; border-radius: 16px; background: #191a1e; box-shadow: 0 24px 70px rgba(0, 0, 0, .58); }
+.node-popup { position: fixed; z-index: 70; width: min(574px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 14px 20px 16px; border: 1px solid #2b2d34; border-radius: 16px; background: #191a1e; box-shadow: 0 24px 70px rgba(0, 0, 0, .58); }
 .popup-topline { display: flex; justify-content: space-between; align-items: center; min-height: 22px; color: #8f929c; font-size: 12px; }
 .popup-topline > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popup-topline strong { color: #dfe1e8; }
@@ -367,7 +380,7 @@ body.resizing-shapes { cursor: row-resize; user-select: none; }
 .popup-drag-handle:active { cursor: grabbing; }
 .popup-drag-grip { display: inline-block; width: 14px; height: 10px; margin-right: 7px; background-image: radial-gradient(circle, #697180 1.4px, transparent 1.6px); background-size: 5px 5px; vertical-align: -1px; }
 .popup-close { width: 26px; height: 26px; padding: 0; border: 0; background: transparent; font-size: 22px; line-height: 1; }
-.node-tools { display: grid; grid-template-columns: repeat(8, minmax(54px, 1fr)); gap: 4px; margin: 4px 0 14px; }
+.node-tools { display: grid; grid-template-columns: repeat(9, minmax(54px, 1fr)); gap: 4px; margin: 4px 0 14px; }
 .node-tool { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 4px 0; border: 0; background: transparent; color: #d8dae1; font-size: 11px; white-space: nowrap; }
 .node-tool:hover, .node-tool.active { background: transparent; border: 0; color: white; }
 .node-tool[data-tooltip] { position: relative; }
